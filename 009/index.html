@@ -1,1 +1,785 @@
-none 009
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEKO FOREST RUN</title>
+    <style>
+        :root {
+            --bg-color: #0d2b14;
+            --text-color: #fff;
+            --btn-bg: #27ae60;
+            --btn-hover: #2ecc71;
+            --btn-secondary: #8e44ad;
+            --font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            overflow: hidden;
+            font-family: var(--font);
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #game-canvas {
+            display: block;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            background-color: #000;
+        }
+
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+        }
+
+        .ui-layer > * {
+            pointer-events: auto;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .panel {
+            background: rgba(13, 43, 20, 0.85);
+            border: 2px solid #27ae60;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            color: var(--text-color);
+            backdrop-filter: blur(5px);
+        }
+
+        h1 {
+            font-size: clamp(2rem, 5vw, 4rem);
+            margin: 0 0 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            color: #f1c40f;
+        }
+
+        p {
+            margin: 10px 0;
+            font-size: 1.1rem;
+            color: #ecf0f1;
+        }
+
+        .instructions {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: var(--btn-bg);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            margin-top: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        button:hover {
+            background-color: var(--btn-hover);
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 1rem;
+            background-color: var(--btn-secondary);
+            border-radius: 8px;
+            margin: 5px;
+        }
+
+        .settings-area {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .file-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .file-input-wrapper label {
+            font-size: 0.9rem;
+            background: #556b2f;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .file-input-wrapper label:hover {
+            background: #6b8e23;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            display: none;
+        }
+
+        #ui-portrait {
+            background: var(--bg-color);
+            z-index: 9999;
+        }
+
+        #btn-fullscreen {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="game-canvas"></canvas>
+
+    <button id="btn-fullscreen" class="btn-small hidden">FULL SCREEN</button>
+
+    <div id="ui-title" class="ui-layer">
+        <div class="panel">
+            <h1>NEKO FOREST RUN</h1>
+            <div class="instructions">
+                <p>👆 <b>上下ドラッグ</b> で障害物を避ける</p>
+                <p>🎯 <b>画面をタップ</b> で弾を撃って壊す！</p>
+            </div>
+            <button id="btn-play">PLAY</button>
+
+            <div class="settings-area">
+                <span style="font-size: 0.9rem; color: #ccc;">画像カスタマイズ（端末内保存）</span>
+                <div class="file-input-wrapper">
+                    <label>ねこ画像 <input type="file" id="input-player-img" accept="image/*"></label>
+                    <label>背景画像 <input type="file" id="input-bg-img" accept="image/*"></label>
+                </div>
+                <button id="btn-reset-img" class="btn-small">画像をリセット</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui-gameover" class="ui-layer hidden">
+        <div class="panel">
+            <h1>GAME OVER</h1>
+            <p>生存時間: <span id="text-score" style="font-weight: bold; color: #f1c40f; font-size: 1.5rem;">0</span> 秒</p>
+            <p>破壊数 (KILLS): <span id="text-kills" style="font-weight: bold; color: #e74c3c; font-size: 1.5rem;">0</span></p>
+            <button id="btn-retry">RETRY</button>
+        </div>
+    </div>
+
+    <div id="ui-portrait" class="ui-layer hidden">
+        <div class="panel">
+            <h2>端末を横にしてください</h2>
+            <p>Please rotate your device.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * 1. CONFIG: ゲーム全体の設定
+ */
+const CONFIG = {
+    worldW: 960,
+    worldH: 540,
+    playerW: 50,
+    playerH: 50,
+    playerColor: '#f39c12',
+    obstacleW: 40,
+    obstacleH: 40,
+    bulletW: 24,          // 弾の幅
+    bulletH: 10,          // 弾の高さ
+    bulletSpeed: 1000,    // 弾の飛ぶ速度 (px/sec)
+    bulletColor: '#00d2ff',// 弾の色
+    speedInitial: 400,
+    speedMax: 1200,
+    speedAcc: 15,
+    spawnIntervalInit: 1.2,
+    spawnIntervalMin: 0.4,
+    margin: 20,
+    bgStartColor: '#8fce00',
+    bgEndColor: '#228b22'
+};
+
+/**
+ * 2. 状態管理（State）
+ */
+const state = {
+    status: 'title', // 'title', 'playing', 'gameover'
+    timeAlive: 0,
+    kills: 0,
+    currentSpeed: CONFIG.speedInitial,
+    spawnTimer: 0,
+    paused: false,
+    player: { x: 150, y: CONFIG.worldH / 2, targetY: CONFIG.worldH / 2 },
+    obstacles: [],
+    bullets: [], // 弾の配列を追加
+    customImages: { player: null, bg: null },
+    view: { scale: 1, offsetX: 0, offsetY: 0 },
+    bgTime: 0
+};
+
+/**
+ * 3. DOMエレメントの取得
+ */
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+
+const uiTitle = document.getElementById('ui-title');
+const uiGameover = document.getElementById('ui-gameover');
+const uiPortrait = document.getElementById('ui-portrait');
+const textScore = document.getElementById('text-score');
+const textKills = document.getElementById('text-kills');
+
+const btnPlay = document.getElementById('btn-play');
+const btnRetry = document.getElementById('btn-retry');
+const btnFullscreen = document.getElementById('btn-fullscreen');
+const btnResetImg = document.getElementById('btn-reset-img');
+
+const inputPlayerImg = document.getElementById('input-player-img');
+const inputBgImg = document.getElementById('input-bg-img');
+
+/**
+ * 4. 画面サイズ計算 (View & Resize)
+ */
+function computeView() {
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+
+    if (winH > winW) {
+        uiPortrait.classList.remove('hidden');
+        if (state.status === 'playing') state.paused = true;
+    } else {
+        uiPortrait.classList.add('hidden');
+        if (state.status === 'playing') state.paused = false;
+    }
+
+    const scale = Math.min(winW / CONFIG.worldW, winH / CONFIG.worldH);
+    canvas.width = CONFIG.worldW * scale;
+    canvas.height = CONFIG.worldH * scale;
+
+    const offsetX = (winW - canvas.width) / 2;
+    const offsetY = (winH - canvas.height) / 2;
+    state.view = { scale, offsetX, offsetY };
+}
+window.addEventListener('resize', computeView);
+
+/**
+ * 5. 入力制御 (Pointer Events & タップ撃ち)
+ */
+function screenToWorldY(clientY) {
+    const { scale, offsetY } = state.view;
+    let worldY = (clientY - offsetY) / scale;
+    const minY = CONFIG.margin + CONFIG.playerH / 2;
+    const maxY = CONFIG.worldH - CONFIG.margin - CONFIG.playerH / 2;
+    return Math.max(minY, Math.min(maxY, worldY));
+}
+
+let isDragging = false;
+let pointerDownInfo = { x: 0, y: 0, time: 0 };
+
+canvas.addEventListener('pointerdown', (e) => {
+    if (state.status !== 'playing' || state.paused) return;
+    isDragging = true;
+    pointerDownInfo = { x: e.clientX, y: e.clientY, time: Date.now() };
+    state.player.targetY = screenToWorldY(e.clientY);
+});
+
+canvas.addEventListener('pointermove', (e) => {
+    if (state.status !== 'playing' || state.paused || !isDragging) return;
+    state.player.targetY = screenToWorldY(e.clientY);
+});
+
+// window側で捕捉して、画面外で指を離した時も検知
+window.addEventListener('pointerup', (e) => {
+    if (state.status === 'playing' && !state.paused && isDragging) {
+        // タップ判定（移動量が少なく、時間が短い場合のみ弾を撃つ）
+        const dx = e.clientX - pointerDownInfo.x;
+        const dy = e.clientY - pointerDownInfo.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const timeElapsed = Date.now() - pointerDownInfo.time;
+        
+        // 移動距離が15px以下、かつ300ミリ秒以内のタッチなら「タップ」とみなす
+        if (dist < 15 && timeElapsed < 300) {
+            shootBullet();
+        }
+    }
+    isDragging = false;
+});
+window.addEventListener('pointercancel', () => { isDragging = false; });
+document.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+
+/**
+ * 6. 画像ストレージ処理
+ */
+function loadCustomImages() {
+    try {
+        const pImgData = localStorage.getItem('neko_player_img');
+        const bImgData = localStorage.getItem('neko_bg_img');
+        if (pImgData) setImage('player', pImgData);
+        if (bImgData) setImage('bg', bImgData);
+    } catch(e) {}
+}
+
+function setImage(type, dataURL) {
+    const img = new Image();
+    img.onload = () => { state.customImages[type] = img; };
+    img.src = dataURL;
+    try { localStorage.setItem(`neko_${type}_img`, dataURL); } catch(e) {}
+}
+
+function handleFileUpload(e, type) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => setImage(type, event.target.result);
+    reader.readAsDataURL(file);
+}
+
+inputPlayerImg.addEventListener('change', (e) => handleFileUpload(e, 'player'));
+inputBgImg.addEventListener('change', (e) => handleFileUpload(e, 'bg'));
+btnResetImg.addEventListener('click', () => {
+    state.customImages.player = null;
+    state.customImages.bg = null;
+    try {
+        localStorage.removeItem('neko_player_img');
+        localStorage.removeItem('neko_bg_img');
+    } catch(e) {}
+    alert('画像をリセットしました');
+});
+
+/**
+ * 7. ゲームロジック
+ */
+function startGame() {
+    state.status = 'playing';
+    state.timeAlive = 0;
+    state.kills = 0;
+    state.currentSpeed = CONFIG.speedInitial;
+    state.obstacles = [];
+    state.bullets = [];
+    state.player.y = CONFIG.worldH / 2;
+    state.player.targetY = CONFIG.worldH / 2;
+    state.paused = false;
+    
+    uiTitle.classList.add('hidden');
+    uiGameover.classList.add('hidden');
+    computeView();
+}
+
+function gameOver() {
+    state.status = 'gameover';
+    textScore.textContent = state.timeAlive.toFixed(1);
+    textKills.textContent = state.kills;
+    uiGameover.classList.remove('hidden');
+}
+
+function shootBullet() {
+    // プレイヤーの少し右側から発射
+    state.bullets.push({
+        x: state.player.x + CONFIG.playerW / 2 + 10,
+        y: state.player.y,
+        w: CONFIG.bulletW,
+        h: CONFIG.bulletH
+    });
+}
+
+function spawnObstacle() {
+    const minY = CONFIG.margin;
+    const maxY = CONFIG.worldH - CONFIG.margin - CONFIG.obstacleH;
+    const randomY = minY + Math.random() * (maxY - minY);
+    
+    const types = ['tree', 'thorn', 'bee'];
+    const selectedType = types[Math.floor(Math.random() * types.length)];
+
+    state.obstacles.push({
+        x: CONFIG.worldW,
+        y: randomY,
+        w: CONFIG.obstacleW,
+        h: CONFIG.obstacleH,
+        type: selectedType,
+        animTime: Math.random() * Math.PI
+    });
+}
+
+// プレイヤー vs 障害物の判定
+function checkCollision(p, obs) {
+    const pLeft = p.x - CONFIG.playerW / 2;
+    const pRight = p.x + CONFIG.playerW / 2;
+    const pTop = p.y - CONFIG.playerH / 2;
+    const pBottom = p.y + CONFIG.playerH / 2;
+    const margin = 8; // ねこ画像の余白を加味して少し甘く
+
+    return (pLeft + margin < obs.x + obs.w &&
+            pRight - margin > obs.x &&
+            pTop + margin < obs.y + obs.h &&
+            pBottom - margin > obs.y);
+}
+
+// 弾 vs 障害物の判定
+function checkBulletCollision(b, obs) {
+    const bLeft = b.x - b.w / 2;
+    const bRight = b.x + b.w / 2;
+    const bTop = b.y - b.h / 2;
+    const bBottom = b.y + b.h / 2;
+    
+    return (bLeft < obs.x + obs.w &&
+            bRight > obs.x &&
+            bTop < obs.y + obs.h &&
+            bBottom > obs.y);
+}
+
+function update(dt) {
+    if (state.status !== 'playing' || state.paused) return;
+
+    state.timeAlive += dt;
+    state.bgTime += dt;
+    if (state.currentSpeed < CONFIG.speedMax) {
+        state.currentSpeed += CONFIG.speedAcc * dt;
+    }
+
+    // プレイヤー追従
+    const dy = state.player.targetY - state.player.y;
+    state.player.y += dy * (dt * 15);
+
+    // 障害物出現
+    state.spawnTimer -= dt;
+    if (state.spawnTimer <= 0) {
+        spawnObstacle();
+        const progress = (state.currentSpeed - CONFIG.speedInitial) / (CONFIG.speedMax - CONFIG.speedInitial);
+        const currentInterval = CONFIG.spawnIntervalInit - progress * (CONFIG.spawnIntervalInit - CONFIG.spawnIntervalMin);
+        state.spawnTimer = Math.max(CONFIG.spawnIntervalMin, currentInterval);
+    }
+
+    // 弾の更新と衝突判定
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const b = state.bullets[i];
+        b.x += CONFIG.bulletSpeed * dt;
+        
+        let hit = false;
+        // 障害物との当たり判定
+        for (let j = state.obstacles.length - 1; j >= 0; j--) {
+            const obs = state.obstacles[j];
+            if (checkBulletCollision(b, obs)) {
+                // 衝突したら障害物と弾を消し、キル数を増やす
+                state.obstacles.splice(j, 1);
+                state.kills++;
+                hit = true;
+                break;
+            }
+        }
+
+        if (hit) {
+            state.bullets.splice(i, 1);
+            continue;
+        }
+
+        // 画面右端に出たら削除
+        if (b.x - b.w / 2 > CONFIG.worldW) {
+            state.bullets.splice(i, 1);
+        }
+    }
+
+    // 障害物の更新（移動＆プレイヤーとの衝突）
+    for (let i = state.obstacles.length - 1; i >= 0; i--) {
+        const obs = state.obstacles[i];
+        
+        obs.animTime += dt * 10;
+        let yOffset = 0;
+        if (obs.type === 'bee') {
+            yOffset = Math.sin(obs.animTime) * 1.5;
+        }
+
+        obs.x -= state.currentSpeed * dt;
+        obs.y += yOffset;
+
+        if (checkCollision(state.player, obs)) {
+            gameOver();
+            return;
+        }
+
+        if (obs.x + obs.w < 0) {
+            state.obstacles.splice(i, 1);
+        }
+    }
+}
+
+/**
+ * 8. 描画 (Draw)
+ */
+function drawObstacle(obs) {
+    const cx = obs.x + obs.w / 2;
+    const cy = obs.y + obs.h / 2;
+
+    if (obs.type === 'tree') {
+        ctx.fillStyle = '#6b4226';
+        ctx.fillRect(obs.x + 12, obs.y + 15, 16, 25);
+        ctx.fillStyle = '#1e7b1e';
+        ctx.beginPath();
+        ctx.arc(cx, obs.y + 12, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#27ae60';
+        ctx.beginPath();
+        ctx.arc(cx - 5, obs.y + 8, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+    } else if (obs.type === 'thorn') {
+        ctx.fillStyle = '#005f00';
+        ctx.beginPath();
+        ctx.moveTo(obs.x, obs.y + obs.h);
+        ctx.lineTo(obs.x + 10, obs.y + 5);
+        ctx.lineTo(obs.x + 20, obs.y + obs.h);
+        ctx.lineTo(obs.x + 30, obs.y);
+        ctx.lineTo(obs.x + obs.w, obs.y + obs.h);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#32cd32';
+        ctx.beginPath();
+        ctx.moveTo(obs.x + 8, obs.y + 15);
+        ctx.lineTo(obs.x + 10, obs.y + 5);
+        ctx.lineTo(obs.x + 12, obs.y + 15);
+        ctx.fill();
+
+    } else if (obs.type === 'bee') {
+        ctx.fillStyle = '#f1c40f';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 18, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.fillRect(cx - 5, cy - 11, 4, 22);
+        ctx.fillRect(cx + 5, cy - 10, 4, 20);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        const wingAngle = Math.sin(obs.animTime * 2) * 0.5;
+        ctx.save();
+        ctx.translate(cx, cy - 8);
+        ctx.rotate(wingAngle);
+        ctx.beginPath();
+        ctx.ellipse(0, -8, 6, 12, Math.PI / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(cx - 10, cy - 3, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function drawCat(p) {
+    const r = CONFIG.playerW / 2;
+    
+    ctx.fillStyle = CONFIG.playerColor;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 18, p.y - 10);
+    ctx.lineTo(p.x - 22, p.y - 25);
+    ctx.lineTo(p.x - 5, p.y - 18);
+    ctx.fill();
+    
+    ctx.beginPath();
+    ctx.moveTo(p.x + 18, p.y - 10);
+    ctx.lineTo(p.x + 22, p.y - 25);
+    ctx.lineTo(p.x + 5, p.y - 18);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(p.x - 10, p.y - 3, 6, 0, Math.PI * 2);
+    ctx.arc(p.x + 10, p.y - 3, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(p.x - 8, p.y - 3, 3, 0, Math.PI * 2);
+    ctx.arc(p.x + 12, p.y - 3, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y + 5, 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 12, p.y + 2); ctx.lineTo(p.x - 25, p.y);
+    ctx.moveTo(p.x - 12, p.y + 6); ctx.lineTo(p.x - 24, p.y + 8);
+    ctx.moveTo(p.x + 12, p.y + 2); ctx.lineTo(p.x + 25, p.y);
+    ctx.moveTo(p.x + 12, p.y + 6); ctx.lineTo(p.x + 24, p.y + 8);
+    ctx.stroke();
+}
+
+function drawBullet(b) {
+    // 魔法の弾のような見た目
+    ctx.fillStyle = CONFIG.bulletColor;
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, b.w / 2, b.h / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // 弾のハイライト（中心の白い光）
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(b.x + 2, b.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function draw() {
+    const { scale } = state.view;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(scale, scale);
+
+    // --- 背景 ---
+    if (state.customImages.bg) {
+        ctx.drawImage(state.customImages.bg, 0, 0, CONFIG.worldW, CONFIG.worldH);
+    } else {
+        const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.worldH);
+        grad.addColorStop(0, CONFIG.bgStartColor);
+        grad.addColorStop(1, CONFIG.bgEndColor);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+
+        ctx.fillStyle = 'rgba(255, 255, 220, 0.15)';
+        for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            let xOffset = (i * 250) - (state.bgTime * 20 % 300);
+            ctx.moveTo(xOffset + 100, 0);
+            ctx.lineTo(xOffset + 300, 0);
+            ctx.lineTo(xOffset - 100, CONFIG.worldH);
+            ctx.lineTo(xOffset - 300, CONFIG.worldH);
+            ctx.fill();
+        }
+    }
+
+    if (state.status === 'playing' || state.status === 'gameover') {
+        
+        // --- 弾 ---
+        for (const b of state.bullets) {
+            drawBullet(b);
+        }
+
+        // --- 障害物 ---
+        for (const obs of state.obstacles) {
+            drawObstacle(obs);
+        }
+
+        // --- プレイヤー ---
+        const p = state.player;
+        if (state.customImages.player) {
+            ctx.drawImage(
+                state.customImages.player, 
+                p.x - CONFIG.playerW/2, p.y - CONFIG.playerH/2, 
+                CONFIG.playerW, CONFIG.playerH
+            );
+        } else {
+            drawCat(p);
+        }
+
+        // --- スコア＆キル数 ---
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur = 4;
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(`SCORE: ${Math.floor(state.timeAlive)} 秒`, CONFIG.worldW - 20, 40);
+
+        ctx.fillStyle = '#f1c40f'; // キル数は色を変えて少し下に配置
+        ctx.fillText(`KILLS: ${state.kills}`, CONFIG.worldW - 20, 75);
+        
+        ctx.shadowBlur = 0;
+    }
+}
+
+/**
+ * 9. メインループ
+ */
+let lastTime = 0;
+function gameLoop(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+    lastTime = timestamp;
+
+    update(dt);
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+/**
+ * 10. フルスクリーン・UIイベント連携
+ */
+btnPlay.addEventListener('click', startGame);
+btnRetry.addEventListener('click', startGame);
+
+if (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) {
+    btnFullscreen.classList.remove('hidden');
+    btnFullscreen.addEventListener('click', () => {
+        const doc = window.document;
+        const docEl = doc.documentElement;
+        const requestFS = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+        const exitFS = doc.exitFullscreen || doc.webkitExitFullscreen;
+        
+        if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+            requestFS.call(docEl).catch(err => {});
+        } else {
+            exitFS.call(doc).catch(err => {});
+        }
+    });
+}
+
+/**
+ * 11. 初期化処理
+ */
+function init() {
+    loadCustomImages();
+    computeView();
+    requestAnimationFrame(gameLoop);
+}
+init();
+
+</script>
+</body>
+</html>

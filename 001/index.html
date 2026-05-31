@@ -1,1 +1,617 @@
-none
+自己ベスト（ハイスコア）保存機能を実装し、ゲームオーバー画面で「LAST（今回のスコア）」「BEST（最高スコア）」、更新時の「NEW RECORD!」表示を追加しました。
+
+これまでの仕様（レトロデザイン、ライフ制、無敵時間、カスタマイズ機能、1ファイル完結など）はすべて維持しています。以下のコードを `index.html` として上書き保存してプレイしてください。
+
+```html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PIXEL DODGE</title>
+    <style>
+        /* === CSS / リセットとレトロスタイル === */
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #000; overflow: hidden;
+            touch-action: none; 
+            user-select: none;
+            -webkit-user-select: none;
+            /* 外部フォント禁止のため、システム等幅フォントでレトロ感を出す */
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            /* ピクセルアートをくっきり拡大する */
+            image-rendering: pixelated;
+        }
+
+        /* === UI レイヤー === */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0, 0, 0, 0.85); color: #0ff;
+            pointer-events: auto;
+            transition: opacity 0.2s;
+            /* ブラウン管風スキャンライン (CSS側) */
+            background-image: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px);
+        }
+
+        .hidden { display: none !important; }
+
+        h1 {
+            font-size: 56px; margin-bottom: 20px; 
+            color: #ff00ff; letter-spacing: 5px; text-align: center;
+            text-shadow: 4px 4px 0 #000, -2px -2px 0 #0ff;
+        }
+        
+        h2 { font-size: 40px; color: #ff0000; margin-bottom: 10px; text-shadow: 3px 3px 0 #000; }
+
+        .record-msg {
+            color: #ff0; font-size: 28px; margin: 0;
+            text-shadow: 2px 2px 0 #000;
+            animation: blink 0.5s infinite alternate;
+        }
+
+        @keyframes blink {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        /* レトロ風ピクセルボタン */
+        .btn {
+            padding: 15px 40px; font-size: 24px; font-weight: bold; font-family: inherit;
+            background: #000; color: #0f0; border: 4px solid #0f0;
+            cursor: pointer; margin: 10px; text-transform: uppercase;
+            box-shadow: inset -4px -4px 0 rgba(0,255,0,0.2), 4px 4px 0 #000;
+            transition: transform 0.1s, background 0.1s;
+        }
+        .btn:active { transform: translate(2px, 2px); box-shadow: inset -2px -2px 0 rgba(0,255,0,0.2), 2px 2px 0 #000; }
+        .btn:hover { background: #030; }
+        
+        .btn-retry { color: #0ff; border-color: #0ff; box-shadow: inset -4px -4px 0 rgba(0,255,255,0.2), 4px 4px 0 #000; }
+        .btn-retry:hover { background: #003; }
+
+        .fullscreen-btn {
+            position: absolute; top: 10px; right: 10px;
+            padding: 8px 12px; font-size: 14px; background: #000; font-family: inherit;
+            cursor: pointer; pointer-events: auto; border: 2px solid #fff; color: #fff;
+        }
+
+        /* カスタマイズ設定エリア */
+        .settings-panel {
+            background: #000; padding: 15px 25px; border: 2px dashed #555;
+            margin-top: 30px; font-size: 14px; text-align: center; color: #aaa;
+        }
+        .settings-panel p { margin: 0 0 10px 0; color: #fff; }
+        .file-label {
+            display: inline-block; background: #222; color: #fff; padding: 8px 12px;
+            border: 2px solid #555; cursor: pointer; margin: 5px; font-size: 12px;
+        }
+        .file-label input { display: none; }
+        .reset-btn {
+            background: #000; color: #f00; border: 2px solid #f00; padding: 6px 12px;
+            cursor: pointer; font-size: 12px; margin-top: 15px; font-family: inherit;
+        }
+
+        /* 縦画面警告 */
+        #orientation-warning {
+            z-index: 9999; background: #000; color: #ff0; text-align: center;
+            display: none;
+        }
+        @media (orientation: portrait) {
+            #orientation-warning { display: flex; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <button id="fullscreenBtn" class="fullscreen-btn hidden">F.SCREEN</button>
+
+        <div id="titleScreen" class="screen">
+            <h1>PIXEL DODGE</h1>
+            <button id="playBtn" class="btn">START</button>
+
+            <div class="settings-panel">
+                <p>--- MODS ---</p>
+                <label class="file-label">
+                    PLAYER IMG
+                    <input type="file" id="playerImageInput" accept="image/*">
+                </label>
+                <label class="file-label">
+                    BG IMG
+                    <input type="file" id="bgImageInput" accept="image/*">
+                </label><br>
+                <button id="resetImagesBtn" class="reset-btn">RESET MODS</button>
+            </div>
+        </div>
+
+        <div id="gameoverScreen" class="screen hidden">
+            <h2>GAME OVER</h2>
+            <p id="newRecordMsg" class="record-msg hidden">NEW RECORD!</p>
+            <p style="font-size: 24px; margin: 15px 0 5px 0;">LAST: <span id="finalScore">0.0</span>s</p>
+            <p style="font-size: 24px; margin: 0 0 20px 0; color: #aaa;">BEST: <span id="bestScore">0.0</span>s</p>
+            <button id="retryBtn" class="btn btn-retry">RETRY</button>
+        </div>
+
+        <div id="orientation-warning" class="screen">
+            <h2>ROTATE<br>DEVICE</h2>
+        </div>
+    </div>
+
+<script>
+    /* ==========================================
+       CONFIG: ゲーム設定
+       ========================================== */
+    const CONFIG = {
+        worldW: 960,
+        worldH: 540,
+        playerW: 40,
+        playerH: 40,
+        obsW: 40,
+        obsHMin: 80,
+        obsHMax: 220,
+        baseObsSpeed: 450,
+        baseSpawnRate: 1.0,
+        starCount: 60,      // 背景の星の数
+        maxLives: 3,        // 最大ライフ
+        invincibleTime: 1.0 // 被弾後の無敵時間（秒）
+    };
+
+    /* ==========================================
+       変数・状態管理
+       ========================================== */
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false; 
+
+    const titleScreen = document.getElementById('titleScreen');
+    const gameoverScreen = document.getElementById('gameoverScreen');
+    const playBtn = document.getElementById('playBtn');
+    const retryBtn = document.getElementById('retryBtn');
+    const finalScore = document.getElementById('finalScore');
+    const bestScoreEl = document.getElementById('bestScore');
+    const newRecordMsg = document.getElementById('newRecordMsg');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    
+    const playerImageInput = document.getElementById('playerImageInput');
+    const bgImageInput = document.getElementById('bgImageInput');
+    const resetImagesBtn = document.getElementById('resetImagesBtn');
+
+    let state = 'TITLE'; 
+    let lastTime = 0;
+    let score = 0;
+    let localBestScore = 0; // ベストスコア
+    let spawnTimer = 0;
+    let requestID = null;
+
+    // ライフ・無敵時間管理
+    let lives = CONFIG.maxLives;
+    let invulnerableTimer = 0;
+
+    const view = { scale: 1, offsetX: 0, offsetY: 0 };
+    const customImages = { player: null, bg: null };
+    const loadedImages = { player: new Image(), bg: new Image() };
+
+    const player = { x: 150, y: CONFIG.worldH / 2 - CONFIG.playerH / 2, w: CONFIG.playerW, h: CONFIG.playerH };
+    let obstacles = [];
+    let stars = [];
+    let bgOffsetX = 0; 
+
+    let isDragging = false;
+    let lastClientY = 0;
+
+    /* ==========================================
+       初期化・イベント
+       ========================================== */
+    function init() {
+        loadDataFromStorage();
+        window.addEventListener('resize', computeView);
+        computeView();
+
+        if (document.fullscreenEnabled || document.documentElement.webkitRequestFullscreen) {
+            fullscreenBtn.classList.remove('hidden');
+            fullscreenBtn.addEventListener('click', toggleFullScreen);
+        }
+
+        playBtn.addEventListener('click', startGame);
+        retryBtn.addEventListener('click', startGame);
+        
+        playerImageInput.addEventListener('change', (e) => handleImageUpload(e, 'pixel_player_img', 'player'));
+        bgImageInput.addEventListener('change', (e) => handleImageUpload(e, 'pixel_bg_img', 'bg'));
+        resetImagesBtn.addEventListener('click', resetImages);
+
+        document.body.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+
+        canvas.addEventListener('pointerdown', handlePointerDown);
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
+
+        createStars();
+        requestID = requestAnimationFrame(gameLoop);
+    }
+
+    function createStars() {
+        stars = [];
+        for (let i = 0; i < CONFIG.starCount; i++) {
+            stars.push({
+                x: Math.random() * CONFIG.worldW,
+                y: Math.random() * CONFIG.worldH,
+                size: Math.random() > 0.8 ? 4 : 2, 
+                speed: Math.random() * 50 + 20
+            });
+        }
+    }
+
+    /* ==========================================
+       入力
+       ========================================== */
+    function getDeltaWorldY(currentClientY) {
+        return (currentClientY - lastClientY) / view.scale;
+    }
+
+    function handlePointerDown(e) {
+        if (state !== 'PLAYING') return;
+        isDragging = true;
+        lastClientY = e.clientY;
+    }
+
+    function handlePointerMove(e) {
+        if (!isDragging || state !== 'PLAYING') return;
+        let deltaY = getDeltaWorldY(e.clientY);
+        player.y += deltaY;
+        player.y = Math.max(0, Math.min(player.y, CONFIG.worldH - player.h));
+        lastClientY = e.clientY;
+    }
+
+    function handlePointerUp(e) { isDragging = false; }
+
+    /* ==========================================
+       ゲームロジック
+       ========================================== */
+    function startGame() {
+        state = 'PLAYING';
+        score = 0;
+        spawnTimer = 0;
+        lives = CONFIG.maxLives;
+        invulnerableTimer = 0;
+        obstacles = [];
+        player.y = CONFIG.worldH / 2 - player.h / 2;
+        isDragging = false;
+        
+        titleScreen.classList.add('hidden');
+        gameoverScreen.classList.add('hidden');
+        lastTime = performance.now();
+    }
+
+    function gameOver() {
+        state = 'GAMEOVER';
+        
+        let isNewRecord = false;
+        if (score > localBestScore) {
+            localBestScore = score;
+            isNewRecord = true;
+            try {
+                localStorage.setItem('pixel_best_score', localBestScore.toString());
+            } catch(e) {}
+        }
+
+        finalScore.innerText = score.toFixed(1);
+        bestScoreEl.innerText = localBestScore.toFixed(1);
+        
+        if (isNewRecord) {
+            newRecordMsg.classList.remove('hidden');
+        } else {
+            newRecordMsg.classList.add('hidden');
+        }
+
+        gameoverScreen.classList.remove('hidden');
+        isDragging = false;
+    }
+
+    function spawnObstacle() {
+        const h = Math.random() * (CONFIG.obsHMax - CONFIG.obsHMin) + CONFIG.obsHMin;
+        const y = Math.random() * (CONFIG.worldH - h); 
+        
+        const types = ['BLOCK', 'SPIKE', 'BEAM'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        const actualH = (type === 'BEAM') ? Math.max(150, h) : h; 
+        
+        obstacles.push({
+            x: CONFIG.worldW,
+            y: (type === 'BEAM') ? Math.random() * (CONFIG.worldH - actualH) : y,
+            w: (type === 'SPIKE') ? 50 : CONFIG.obsW, 
+            h: actualH,
+            type: type
+        });
+    }
+
+    function update(dt) {
+        if (window.matchMedia("(orientation: portrait)").matches) return;
+
+        score += dt;
+        
+        if (invulnerableTimer > 0) {
+            invulnerableTimer -= dt;
+        }
+
+        const speedMultiplier = 1 + (score / 40); 
+        const currentObsSpeed = CONFIG.baseObsSpeed * speedMultiplier;
+        const currentSpawnRate = Math.max(0.4, CONFIG.baseSpawnRate / Math.sqrt(speedMultiplier));
+
+        stars.forEach(s => {
+            s.x -= (s.speed * speedMultiplier) * dt;
+            if (s.x < 0) {
+                s.x = CONFIG.worldW;
+                s.y = Math.random() * CONFIG.worldH;
+            }
+        });
+
+        if (customImages.bg) {
+            bgOffsetX += 100 * dt;
+            if (bgOffsetX >= CONFIG.worldW) bgOffsetX -= CONFIG.worldW;
+        }
+
+        spawnTimer += dt;
+        if (spawnTimer >= currentSpawnRate) {
+            spawnObstacle();
+            spawnTimer = 0;
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            let obs = obstacles[i];
+            obs.x -= currentObsSpeed * dt;
+
+            if (invulnerableTimer <= 0) {
+                const margin = (obs.type === 'BEAM') ? 10 : 4;
+                if (player.x + margin < obs.x + obs.w &&
+                    player.x + player.w - margin > obs.x &&
+                    player.y + margin < obs.y + obs.h &&
+                    player.y + player.h - margin > obs.y) {
+                    
+                    lives--;
+                    if (lives <= 0) {
+                        gameOver();
+                    } else {
+                        invulnerableTimer = CONFIG.invincibleTime;
+                    }
+                }
+            }
+
+            if (obs.x + obs.w < 0) {
+                obstacles.splice(i, 1);
+            }
+        }
+    }
+
+    /* ==========================================
+       描画ロジック
+       ========================================== */
+    function computeView() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        ctx.imageSmoothingEnabled = false; 
+
+        const scaleX = canvas.width / CONFIG.worldW;
+        const scaleY = canvas.height / CONFIG.worldH;
+        view.scale = Math.min(scaleX, scaleY);
+        view.offsetX = (canvas.width - CONFIG.worldW * view.scale) / 2;
+        view.offsetY = (canvas.height - CONFIG.worldH * view.scale) / 2;
+    }
+
+    function draw() {
+        ctx.fillStyle = '#050505'; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.save();
+        ctx.translate(view.offsetX, view.offsetY);
+        ctx.scale(view.scale, view.scale);
+
+        ctx.beginPath();
+        ctx.rect(0, 0, CONFIG.worldW, CONFIG.worldH);
+        ctx.clip();
+
+        if (customImages.bg && loadedImages.bg.complete) {
+            const img = loadedImages.bg;
+            const ratio = img.width / img.height;
+            const drawW = CONFIG.worldH * ratio; 
+            let drawX = -(bgOffsetX % drawW);
+            while (drawX < CONFIG.worldW) {
+                ctx.drawImage(img, drawX, 0, drawW, CONFIG.worldH);
+                drawX += drawW;
+            }
+        } else {
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+            
+            ctx.fillStyle = '#fff';
+            stars.forEach(s => {
+                if (s.size === 4 && Math.random() > 0.95) ctx.fillStyle = '#0ff';
+                else ctx.fillStyle = '#fff';
+                ctx.fillRect(s.x, s.y, s.size, s.size);
+            });
+        }
+
+        obstacles.forEach(obs => {
+            if (obs.type === 'BLOCK') {
+                ctx.fillStyle = '#ff00ff';
+                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(obs.x + 4, obs.y + 4, obs.w - 8, obs.h - 8);
+                ctx.fillStyle = '#ff00ff';
+                ctx.fillRect(obs.x + 12, obs.y + 12, obs.w - 24, obs.h - 24);
+            } else if (obs.type === 'SPIKE') {
+                ctx.fillStyle = '#ff0000';
+                const spikeSize = 20;
+                const spikeCount = Math.floor(obs.h / spikeSize);
+                for(let i=0; i<spikeCount; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(obs.x + obs.w, obs.y + i*spikeSize);
+                    ctx.lineTo(obs.x, obs.y + i*spikeSize + spikeSize/2);
+                    ctx.lineTo(obs.x + obs.w, obs.y + (i+1)*spikeSize);
+                    ctx.fill();
+                }
+                ctx.fillRect(obs.x + obs.w - 10, obs.y, 10, obs.h);
+            } else if (obs.type === 'BEAM') {
+                const isFlash = Math.floor(score * 20) % 2 === 0;
+                ctx.fillStyle = isFlash ? '#fff' : '#0ff';
+                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                ctx.fillStyle = isFlash ? '#0ff' : '#00f';
+                ctx.fillRect(obs.x + 10, obs.y, obs.w - 20, obs.h);
+            }
+        });
+
+        const isBlinking = (invulnerableTimer > 0) && (Math.floor(invulnerableTimer * 15) % 2 === 0);
+        
+        if (!isBlinking) {
+            if (customImages.player && loadedImages.player.complete) {
+                ctx.drawImage(loadedImages.player, player.x, player.y, player.w, player.h);
+            } else {
+                ctx.fillStyle = '#0f0'; 
+                ctx.fillRect(player.x, player.y + 5, player.w, player.h - 10);
+                ctx.fillStyle = '#006600'; 
+                ctx.fillRect(player.x - 5, player.y, 15, player.h);
+                ctx.fillStyle = '#000'; 
+                ctx.fillRect(player.x + 20, player.y + 10, 15, player.h - 20);
+                
+                if (state === 'PLAYING' && Math.floor(score * 15) % 2 === 0) {
+                    ctx.fillStyle = '#f90';
+                    ctx.fillRect(player.x - 15, player.y + 15, 10, 10);
+                    ctx.fillStyle = '#ff0';
+                    ctx.fillRect(player.x - 20, player.y + 18, 5, 4);
+                }
+            }
+        }
+
+        if (!customImages.bg) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            for(let sy = 0; sy < CONFIG.worldH; sy += 4) {
+                ctx.fillRect(0, sy, CONFIG.worldW, 2);
+            }
+        }
+
+        ctx.restore();
+
+        if (state === 'PLAYING') {
+            ctx.font = 'bold 24px "Courier New", Courier, monospace';
+            ctx.textBaseline = 'top';
+
+            ctx.textAlign = 'left';
+            const displayScore = Math.floor(score * 10).toString().padStart(5, '0');
+            ctx.fillStyle = '#000';
+            ctx.fillText(`SCORE: ${displayScore}`, view.offsetX + 22, view.offsetY + 22);
+            ctx.fillStyle = '#0f0';
+            ctx.fillText(`SCORE: ${displayScore}`, view.offsetX + 20, view.offsetY + 20);
+
+            ctx.textAlign = 'right';
+            const displayLives = `LIVES: ${lives}`;
+            const lifeColor = invulnerableTimer > 0 ? '#f00' : '#0f0';
+            const rightEdge = view.offsetX + (CONFIG.worldW * view.scale) - 20;
+
+            ctx.fillStyle = '#000';
+            ctx.fillText(displayLives, rightEdge + 2, view.offsetY + 22);
+            ctx.fillStyle = lifeColor;
+            ctx.fillText(displayLives, rightEdge, view.offsetY + 20);
+            
+            ctx.textAlign = 'left';
+
+        } else if (state === 'TITLE') {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+
+    function gameLoop(timestamp) {
+        let dt = (timestamp - lastTime) / 1000;
+        lastTime = timestamp;
+        if (dt > 0.05) dt = 0.05;
+
+        if (state === 'PLAYING') update(dt);
+        
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+
+    /* ==========================================
+       データ保存・MOD (画像カスタマイズ)
+       ========================================== */
+    function loadDataFromStorage() {
+        try {
+            const pImg = localStorage.getItem('pixel_player_img');
+            const bImg = localStorage.getItem('pixel_bg_img');
+            const best = localStorage.getItem('pixel_best_score');
+            
+            if (pImg) { customImages.player = pImg; loadedImages.player.src = pImg; }
+            if (bImg) { customImages.bg = bImg; loadedImages.bg.src = bImg; }
+            if (best) { localBestScore = parseFloat(best); }
+        } catch(e) {}
+    }
+
+    function handleImageUpload(event, storageKey, targetKey) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            try {
+                localStorage.setItem(storageKey, dataUrl);
+                customImages[targetKey] = dataUrl;
+                loadedImages[targetKey].src = dataUrl;
+            } catch(err) {
+                alert("FILE TOO LARGE.");
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function resetImages() {
+        try {
+            localStorage.removeItem('pixel_player_img');
+            localStorage.removeItem('pixel_bg_img');
+        } catch(e){}
+        customImages.player = null;
+        customImages.bg = null;
+        playerImageInput.value = "";
+        bgImageInput.value = "";
+    }
+
+    /* ==========================================
+       フルスクリーンAPI
+       ========================================== */
+    function toggleFullScreen() {
+        const doc = window.document;
+        const docEl = doc.documentElement;
+        const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullscreen || docEl.msRequestFullscreen;
+        const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+        if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+            if (requestFullScreen) requestFullScreen.call(docEl).catch(err => console.log(err));
+            fullscreenBtn.innerText = "EXIT FS";
+        } else {
+            if (cancelFullScreen) cancelFullScreen.call(doc);
+            fullscreenBtn.innerText = "F.SCREEN";
+        }
+    }
+
+    // 起動
+    window.onload = init;
+
+</script>
+</body>
+</html>
+
+```

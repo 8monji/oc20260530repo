@@ -1,1 +1,776 @@
-none 011
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NEKO FOREST RUN</title>
+<style>
+    /* リセットと基本設定 */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body, html {
+        width: 100%; height: 100%;
+        background-color: #0b1a0d; /* 森の暗がり色 */
+        overflow: hidden;
+        touch-action: none; /* スクロール・ズーム防止 */
+        user-select: none;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #fff;
+    }
+
+    /* ゲームコンテナとキャンバス */
+    #gameContainer {
+        position: relative;
+        width: 100%; height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    canvas {
+        display: block;
+    }
+
+    /* フルスクリーンボタン */
+    #fsBtn {
+        position: absolute;
+        top: 10px; right: 10px;
+        z-index: 100;
+        background: rgba(255,255,255,0.2);
+        border: 2px solid #fff;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-weight: bold;
+        cursor: pointer;
+        display: none; /* JSで対応判定後に表示 */
+    }
+
+    /* UIオーバーレイ共通 */
+    .overlay {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: rgba(11, 26, 13, 0.8);
+        z-index: 50;
+    }
+    .overlay.active {
+        display: flex;
+    }
+
+    /* タイトル画面 */
+    h1 { 
+        font-size: 52px; 
+        margin-bottom: 30px; 
+        letter-spacing: 2px; 
+        text-shadow: 0 0 15px #7bed2f; 
+        text-align: center; 
+        color: #f0ffd0;
+    }
+    .btn {
+        background: #7bed2f; /* グリーン系 */
+        color: #0d2b02;
+        border: none;
+        padding: 15px 40px;
+        font-size: 24px;
+        font-weight: bold;
+        border-radius: 30px;
+        cursor: pointer;
+        margin-bottom: 30px;
+        box-shadow: 0 0 15px #7bed2f;
+        transition: transform 0.1s;
+    }
+    .btn:active { transform: scale(0.95); }
+
+    /* カスタマイズUI */
+    .custom-panel {
+        background: rgba(255,255,255,0.1);
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+    }
+    .custom-panel p { font-size: 14px; color: #ddd; margin-bottom: 5px; }
+    .file-row { display: flex; gap: 10px; }
+    .file-btn {
+        background: #2c472c; color: #fff; border: 1px solid #5ca041;
+        padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 14px;
+        display: inline-block;
+    }
+    .file-btn input { display: none; }
+    #resetImgBtn { background: #d33; border-color: #f66; }
+
+    /* 縦画面警告 */
+    #portraitWarning {
+        background: #000;
+        z-index: 9999;
+        text-align: center;
+    }
+    #portraitWarning p { font-size: 24px; line-height: 1.5; color: #ff0; }
+    .rotate-icon { font-size: 60px; margin-bottom: 20px; display: inline-block; animation: rotateAnim 2s infinite ease-in-out; }
+    
+    @keyframes rotateAnim {
+        0% { transform: rotate(0deg); }
+        50% { transform: rotate(90deg); }
+        100% { transform: rotate(90deg); }
+    }
+
+    /* CSSメディアクエリで縦画面検知 */
+    @media (orientation: portrait) {
+        #portraitWarning { display: flex !important; }
+    }
+</style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <button id="fsBtn">FULL SCREEN</button>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="titleScreen" class="overlay active">
+        <h1>NEKO FOREST RUN</h1>
+        <button id="playBtn" class="btn">PLAY</button>
+        
+        <div class="custom-panel">
+            <p>【画像差し替え】</p>
+            <div class="file-row">
+                <label class="file-btn">
+                    🖼️ 背景
+                    <input type="file" id="bgInput" accept="image/*">
+                </label>
+                <label class="file-btn">
+                    😺 プレイヤー
+                    <input type="file" id="playerInput" accept="image/*">
+                </label>
+            </div>
+            <button id="resetImgBtn" class="file-btn">RESET</button>
+        </div>
+    </div>
+
+    <div id="gameOverScreen" class="overlay">
+        <h1 style="color: #ff5555; text-shadow: 0 0 10px #ff5555;">GAME OVER</h1>
+        <p style="font-size: 24px; margin-bottom: 20px; text-align: center; line-height: 1.5;">
+            生存時間: <span id="resultScore">0</span> 秒<br>
+            撃破数: <span id="resultKills">0</span> 匹/本
+        </p>
+        <button id="retryBtn" class="btn">RETRY</button>
+    </div>
+
+    <div id="portraitWarning" class="overlay">
+        <div class="rotate-icon">📱</div>
+        <p>画面を横にして<br>プレイしてください</p>
+    </div>
+</div>
+
+<script>
+/**
+ * 1. CONFIG (ゲーム設定)
+ */
+const CONFIG = {
+    worldW: 960,
+    worldH: 540,
+    playerSize: 50,     // 猫のサイズ
+    speedInit: 400,     // 障害物の初期速度 (ピクセル/秒)
+    speedUpRate: 15,    // 1秒あたりの速度増加量
+    spawnInterval: 1.0, // 障害物出現間隔（秒）
+    bgSpeed: 100,       // 背景スクロール速度
+    bulletSpeed: 800    // 弾の速度
+};
+
+/**
+ * 2. グローバル変数・状態管理
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let gameState = 'TITLE'; // TITLE, PLAYING, GAMEOVER
+let scoreTimer = 0;
+let lastTime = 0;
+let scale = 1, offsetX = 0, offsetY = 0;
+
+let player = { x: 120, y: CONFIG.worldH / 2, w: CONFIG.playerSize, h: CONFIG.playerSize };
+let obstacles = [];
+let bullets = [];       // 追加: 弾の配列
+let kills = 0;          // 追加: 破壊数
+let spawnTimer = 0;
+let currentSpeed = CONFIG.speedInit;
+let isDragging = false;
+let bgOffsetX = 0;
+
+// ドラッグ判定用（タップ時の誤射防止）
+let pointerDownX = 0;
+let pointerDownY = 0;
+let hasDragged = false;
+
+// 画像アセット
+let images = {
+    bg: null,
+    player: null
+};
+
+// UI要素
+const ui = {
+    title: document.getElementById('titleScreen'),
+    gameOver: document.getElementById('gameOverScreen'),
+    resultScore: document.getElementById('resultScore'),
+    resultKills: document.getElementById('resultKills'),
+    playBtn: document.getElementById('playBtn'),
+    retryBtn: document.getElementById('retryBtn'),
+    fsBtn: document.getElementById('fsBtn'),
+    bgInput: document.getElementById('bgInput'),
+    playerInput: document.getElementById('playerInput'),
+    resetImgBtn: document.getElementById('resetImgBtn')
+};
+
+/**
+ * 3. 画像管理とローカルストレージ
+ */
+function loadImages() {
+    const savedBg = localStorage.getItem('neko_runner_bg');
+    if (savedBg) setImage('bg', savedBg);
+    
+    const savedPlayer = localStorage.getItem('neko_runner_player');
+    if (savedPlayer) setImage('player', savedPlayer);
+}
+
+function setImage(key, dataUrl) {
+    const img = new Image();
+    img.onload = () => { images[key] = img; };
+    img.src = dataUrl;
+}
+
+function handleFileUpload(e, key) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        const dataUrl = ev.target.result;
+        localStorage.setItem(`neko_runner_${key}`, dataUrl);
+        setImage(key, dataUrl);
+    };
+    reader.readAsDataURL(file);
+}
+
+ui.bgInput.addEventListener('change', (e) => handleFileUpload(e, 'bg'));
+ui.playerInput.addEventListener('change', (e) => handleFileUpload(e, 'player'));
+ui.resetImgBtn.addEventListener('click', () => {
+    localStorage.removeItem('neko_runner_bg');
+    localStorage.removeItem('neko_runner_player');
+    images.bg = null;
+    images.player = null;
+    alert('画像を初期化しました');
+});
+
+/**
+ * 4. 画面リサイズ・座標変換
+ */
+function resizeCanvas() {
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+    canvas.width = winW;
+    canvas.height = winH;
+
+    const aspect = winW / winH;
+    const targetAspect = CONFIG.worldW / CONFIG.worldH;
+
+    if (aspect > targetAspect) {
+        scale = winH / CONFIG.worldH;
+        offsetX = (winW - (CONFIG.worldW * scale)) / 2;
+        offsetY = 0;
+    } else {
+        scale = winW / CONFIG.worldW;
+        offsetX = 0;
+        offsetY = (winH - (CONFIG.worldH * scale)) / 2;
+    }
+    ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', resizeCanvas);
+
+function screenToWorld(clientY) {
+    return (clientY - offsetY) / scale;
+}
+
+/**
+ * 5. フルスクリーン対応
+ */
+if (document.documentElement.requestFullscreen) {
+    ui.fsBtn.style.display = 'block';
+    ui.fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(()=>{});
+        } else {
+            if (document.exitFullscreen) document.exitFullscreen();
+        }
+    });
+}
+
+/**
+ * 6. 入力制御 (Pointer Events)
+ */
+function handlePointerDown(e) {
+    if (gameState !== 'PLAYING') return;
+    isDragging = true;
+    hasDragged = false; // ドラッグ状態初期化
+    pointerDownX = e.clientX;
+    pointerDownY = e.clientY;
+    updatePlayerPos(e.clientY);
+}
+
+function handlePointerMove(e) {
+    if (gameState !== 'PLAYING' || !isDragging) return;
+    
+    // 移動量を計算してドラッグ判定（10px以上動いたらドラッグとみなす）
+    if (!hasDragged) {
+        const dx = e.clientX - pointerDownX;
+        const dy = e.clientY - pointerDownY;
+        if (Math.sqrt(dx * dx + dy * dy) > 10) {
+            hasDragged = true;
+        }
+    }
+    updatePlayerPos(e.clientY);
+}
+
+function handlePointerUp(e) {
+    if (gameState === 'PLAYING' && isDragging) {
+        // ドラッグ判定に引っかからなかった場合のみ発射
+        if (!hasDragged) {
+            fireBullet();
+        }
+    }
+    isDragging = false;
+}
+
+function handlePointerCancel() {
+    isDragging = false;
+}
+
+function updatePlayerPos(clientY) {
+    let wy = screenToWorld(clientY);
+    if (wy < player.h / 2) wy = player.h / 2;
+    if (wy > CONFIG.worldH - player.h / 2) wy = CONFIG.worldH - player.h / 2;
+    player.y = wy;
+}
+
+const container = document.getElementById('gameContainer');
+container.addEventListener('pointerdown', handlePointerDown);
+container.addEventListener('pointermove', handlePointerMove);
+container.addEventListener('pointerup', handlePointerUp);
+container.addEventListener('pointercancel', handlePointerCancel);
+
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+/**
+ * 7. ゲームロジック
+ */
+function initGame() {
+    player.y = CONFIG.worldH / 2;
+    obstacles = [];
+    bullets = [];
+    scoreTimer = 0;
+    kills = 0;
+    spawnTimer = 0;
+    currentSpeed = CONFIG.speedInit;
+    bgOffsetX = 0;
+    isDragging = false;
+}
+
+function startGame() {
+    initGame();
+    ui.title.classList.remove('active');
+    ui.gameOver.classList.remove('active');
+    gameState = 'PLAYING';
+    lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+}
+ui.playBtn.addEventListener('click', startGame);
+ui.retryBtn.addEventListener('click', startGame);
+
+function spawnObstacle() {
+    const type = Math.floor(Math.random() * 3); // 0: 木, 1: トゲ草, 2: ハチ
+    let w, h, y;
+
+    if (type === 0) { 
+        w = 60; 
+        h = 150 + Math.random() * 150;
+        y = Math.random() > 0.5 ? 0 : CONFIG.worldH - h;
+    } else if (type === 1) { 
+        w = 80; 
+        h = 50;
+        y = Math.random() * (CONFIG.worldH - h);
+    } else { 
+        w = 50; 
+        h = 40;
+        y = Math.random() * (CONFIG.worldH - h);
+    }
+
+    obstacles.push({ x: CONFIG.worldW, y: y, w: w, h: h, type: type });
+}
+
+function fireBullet() {
+    // プレイヤーの少し前から発射
+    bullets.push({
+        x: player.x + player.w / 2,
+        y: player.y,
+        w: 24,
+        h: 12
+    });
+}
+
+function checkCollision(r1, r2) {
+    // r1: プレイヤーまたは弾 (中央基準), r2: 障害物 (左上基準)
+    const pLeft = r1.x - r1.w/2;
+    const pRight = r1.x + r1.w/2;
+    const pTop = r1.y - r1.h/2;
+    const pBottom = r1.y + r1.h/2;
+
+    const oLeft = r2.x;
+    const oRight = r2.x + r2.w;
+    const oTop = r2.y;
+    const oBottom = r2.y + r2.h;
+
+    // 当たり判定の調整マージン
+    const margin = 8;
+    return !(pRight - margin < oLeft || 
+             pLeft + margin > oRight || 
+             pBottom - margin < oTop || 
+             pTop + margin > oBottom);
+}
+
+function gameOver() {
+    gameState = 'GAMEOVER';
+    ui.resultScore.innerText = scoreTimer.toFixed(1);
+    ui.resultKills.innerText = kills;
+    ui.gameOver.classList.add('active');
+}
+
+/**
+ * 8. アップデートと描画処理
+ */
+function update(dt) {
+    // 縦画面時は更新ストップ（ポーズ状態）
+    if (window.innerWidth < window.innerHeight) return;
+
+    scoreTimer += dt;
+    currentSpeed += CONFIG.speedUpRate * dt;
+    spawnTimer += dt;
+
+    bgOffsetX += CONFIG.bgSpeed * dt;
+    if (bgOffsetX >= CONFIG.worldW) bgOffsetX -= CONFIG.worldW;
+
+    if (spawnTimer >= CONFIG.spawnInterval) {
+        spawnObstacle();
+        spawnTimer = 0;
+    }
+
+    // --- 弾の更新と当たり判定 ---
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += CONFIG.bulletSpeed * dt; // 弾を右へ移動
+        
+        let hit = false;
+        for (let j = obstacles.length - 1; j >= 0; j--) {
+            let obs = obstacles[j];
+            if (checkCollision(b, obs)) {
+                // 弾と障害物が当たった
+                obstacles.splice(j, 1);
+                hit = true;
+                kills++;
+                break; // 内側のループを抜ける
+            }
+        }
+
+        // 画面外に出るか、命中したら弾を削除
+        if (hit || (b.x - b.w / 2 > CONFIG.worldW)) {
+            bullets.splice(i, 1);
+        }
+    }
+
+    // --- 障害物の更新とプレイヤーとの当たり判定 ---
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= currentSpeed * dt;
+
+        if (checkCollision(player, obs)) {
+            gameOver();
+            return;
+        }
+
+        if (obs.x + obs.w < 0) {
+            obstacles.splice(i, 1);
+        }
+    }
+}
+
+// 木漏れ日・森の背景描画
+function drawBackground() {
+    if (images.bg) {
+        ctx.drawImage(images.bg, -bgOffsetX, 0, CONFIG.worldW, CONFIG.worldH);
+        ctx.drawImage(images.bg, CONFIG.worldW - bgOffsetX, 0, CONFIG.worldW, CONFIG.worldH);
+    } else {
+        const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.worldH);
+        grad.addColorStop(0, '#c3e595'); 
+        grad.addColorStop(1, '#3b7d2f'); 
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+        
+        ctx.fillStyle = 'rgba(70, 140, 60, 0.4)';
+        for(let i = 0; i <= Math.ceil(CONFIG.worldW / 100) + 1; i++) {
+            let tx = (i * 100 - (bgOffsetX * 0.3) % 100);
+            if(tx < -100) tx += CONFIG.worldW + 100;
+            ctx.fillRect(tx, 0, 20, CONFIG.worldH);
+        }
+        
+        ctx.fillStyle = 'rgba(50, 110, 45, 0.6)';
+        for(let i = 0; i <= Math.ceil(CONFIG.worldW / 200) + 1; i++) {
+            let tx = (i * 200 - (bgOffsetX * 0.6) % 200);
+            if(tx < -200) tx += CONFIG.worldW + 200;
+            ctx.fillRect(tx + 50, 0, 35, CONFIG.worldH);
+        }
+
+        ctx.fillStyle = 'rgba(255, 255, 220, 0.15)';
+        for(let i=0; i<3; i++) {
+            let bx = (i * 400 - (bgOffsetX * 0.1) % 400);
+            ctx.beginPath();
+            ctx.moveTo(bx + 100, 0);
+            ctx.lineTo(bx + 250, 0);
+            ctx.lineTo(bx - 100, CONFIG.worldH);
+            ctx.lineTo(bx - 300, CONFIG.worldH);
+            ctx.fill();
+        }
+    }
+}
+
+// 弾の描画
+function drawBullets() {
+    ctx.save();
+    ctx.fillStyle = '#fffa86'; // 光る黄色のエネルギー弾
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#fffa86';
+    
+    bullets.forEach(b => {
+        ctx.beginPath();
+        ctx.ellipse(b.x, b.y, b.w/2, b.h/2, 0, 0, Math.PI*2);
+        ctx.fill();
+    });
+    
+    ctx.restore();
+}
+
+// プレイヤー（猫顔）の描画
+function drawPlayer() {
+    const px = player.x - player.w / 2;
+    const py = player.y - player.h / 2;
+    
+    if (images.player) {
+        ctx.drawImage(images.player, px, py, player.w, player.h);
+    } else {
+        const cx = player.x;
+        const cy = player.y;
+        const r = player.w / 2;
+        
+        ctx.save();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        
+        ctx.fillStyle = '#ffb020';
+        ctx.beginPath();
+        ctx.moveTo(cx - r*0.8, cy - r*0.4);
+        ctx.lineTo(cx - r*0.9, cy - r*1.1);
+        ctx.lineTo(cx - r*0.1, cy - r*0.7);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(cx + r*0.8, cy - r*0.4);
+        ctx.lineTo(cx + r*0.9, cy - r*1.1);
+        ctx.lineTo(cx + r*0.1, cy - r*0.7);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        ctx.fillStyle = '#ffdfbb';
+        ctx.beginPath();
+        ctx.moveTo(cx - r*0.7, cy - r*0.5);
+        ctx.lineTo(cx - r*0.8, cy - r*0.9);
+        ctx.lineTo(cx - r*0.3, cy - r*0.7);
+        ctx.fill();
+        
+        ctx.beginPath();
+        ctx.moveTo(cx + r*0.7, cy - r*0.5);
+        ctx.lineTo(cx + r*0.8, cy - r*0.9);
+        ctx.lineTo(cx + r*0.3, cy - r*0.7);
+        ctx.fill();
+        
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(cx - r*0.4, cy - r*0.1, r*0.15, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx + r*0.4, cy - r*0.1, r*0.15, 0, Math.PI * 2); ctx.fill();
+        
+        ctx.fillStyle = '#f69';
+        ctx.beginPath(); ctx.arc(cx, cy + r*0.2, r*0.1, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + r*0.2);
+        ctx.lineTo(cx, cy + r*0.35);
+        ctx.moveTo(cx, cy + r*0.35);
+        ctx.quadraticCurveTo(cx - r*0.2, cy + r*0.5, cx - r*0.4, cy + r*0.35);
+        ctx.moveTo(cx, cy + r*0.35);
+        ctx.quadraticCurveTo(cx + r*0.2, cy + r*0.5, cx + r*0.4, cy + r*0.35);
+        ctx.stroke();
+        
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx - r*0.5, cy); ctx.lineTo(cx - r*1.1, cy - r*0.1);
+        ctx.moveTo(cx - r*0.5, cy + r*0.15); ctx.lineTo(cx - r*1.1, cy + r*0.15);
+        ctx.moveTo(cx + r*0.5, cy); ctx.lineTo(cx + r*1.1, cy - r*0.1);
+        ctx.moveTo(cx + r*0.5, cy + r*0.15); ctx.lineTo(cx + r*1.1, cy + r*0.15);
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+}
+
+// 障害物の描画
+function drawObstacles() {
+    obstacles.forEach(obs => {
+        ctx.save();
+        ctx.translate(obs.x, obs.y);
+        
+        if (obs.type === 0) {
+            ctx.fillStyle = '#6b4f3b';
+            ctx.fillRect(0, 0, obs.w, obs.h);
+            ctx.fillStyle = '#2d6b33';
+            if (obs.y === 0) {
+                ctx.beginPath(); ctx.arc(obs.w/2, obs.h, obs.w*1.1, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(obs.w/2 - 15, obs.h - 20, obs.w*0.8, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(obs.w/2 + 15, obs.h - 20, obs.w*0.8, 0, Math.PI*2); ctx.fill();
+            } else {
+                ctx.beginPath(); ctx.arc(obs.w/2, 0, obs.w*1.1, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(obs.w/2 - 15, 20, obs.w*0.8, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(obs.w/2 + 15, 20, obs.w*0.8, 0, Math.PI*2); ctx.fill();
+            }
+        } else if (obs.type === 1) {
+            ctx.fillStyle = '#1b4a22';
+            ctx.fillRect(0, obs.h/2 - 4, obs.w, 8);
+            ctx.fillStyle = '#8bcc3d';
+            for(let i=0; i<3; i++) {
+                let tx = i * (obs.w / 3);
+                let tw = obs.w / 3;
+                ctx.beginPath(); ctx.moveTo(tx, obs.h/2); ctx.lineTo(tx + tw/2, 0); ctx.lineTo(tx + tw, obs.h/2); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(tx, obs.h/2); ctx.lineTo(tx + tw/2, obs.h); ctx.lineTo(tx + tw, obs.h/2); ctx.fill();
+            }
+        } else if (obs.type === 2) {
+            const wingAnim = (scoreTimer * 30) % (Math.PI * 2);
+            ctx.fillStyle = '#f2c529';
+            ctx.beginPath(); ctx.ellipse(obs.w/2, obs.h/2, obs.w/2, obs.h/2.5, 0, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#222';
+            ctx.fillRect(obs.w*0.3, obs.h*0.15, obs.w*0.15, obs.h*0.7);
+            ctx.fillRect(obs.w*0.6, obs.h*0.15, obs.w*0.15, obs.h*0.7);
+            ctx.fillStyle = '#fff';
+            ctx.beginPath(); ctx.arc(obs.w*0.18, obs.h*0.35, 6, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath(); ctx.arc(obs.w*0.15, obs.h*0.35, 3, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(obs.w*0.95, obs.h/2 - 4); ctx.lineTo(obs.w + 6, obs.h/2); ctx.lineTo(obs.w*0.95, obs.h/2 + 4); ctx.fill();
+            ctx.fillStyle = 'rgba(200, 230, 255, 0.8)';
+            ctx.save();
+            ctx.translate(obs.w/2, obs.h*0.2);
+            ctx.rotate(Math.sin(wingAnim) * 0.4);
+            ctx.beginPath(); ctx.ellipse(0, -obs.h*0.3, obs.w*0.15, obs.h*0.3, Math.PI/6, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+            ctx.save();
+            ctx.translate(obs.w/2 - 8, obs.h*0.2);
+            ctx.rotate(Math.cos(wingAnim) * 0.4);
+            ctx.beginPath(); ctx.ellipse(0, -obs.h*0.25, obs.w*0.15, obs.h*0.25, -Math.PI/6, 0, Math.PI*2); ctx.fill();
+            ctx.restore();
+        }
+        ctx.restore();
+    });
+}
+
+function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
+
+    drawBackground();
+    drawBullets();     // 追加: 弾の描画
+    drawObstacles();
+    drawPlayer();
+
+    // スコアと撃破数の表示
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px "Segoe UI", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = '#000';
+    ctx.fillText(`TIME: ${scoreTimer.toFixed(1)}s`, CONFIG.worldW - 20, 40);
+    ctx.fillText(`KILLS: ${kills}`, CONFIG.worldW - 20, 75); // KILLS追加
+    ctx.shadowBlur = 0;
+
+    if (window.innerWidth < window.innerHeight) {
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+        ctx.fillStyle = '#ff0';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 40px sans-serif';
+        ctx.fillText("PAUSED", CONFIG.worldW/2, CONFIG.worldH/2);
+    }
+
+    ctx.restore();
+}
+
+/**
+ * 9. メインループ
+ */
+function gameLoop(timestamp) {
+    if (gameState !== 'PLAYING') return;
+
+    let dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+    
+    if (dt > 0.1) dt = 0.1;
+
+    update(dt);
+    draw();
+
+    if (gameState === 'PLAYING') {
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+loadImages();
+resizeCanvas();
+drawBackgroundTitle();
+
+function drawBackgroundTitle() {
+    if(gameState === 'TITLE') {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+        
+        bgOffsetX += CONFIG.bgSpeed * 0.016; 
+        if (bgOffsetX >= CONFIG.worldW) bgOffsetX -= CONFIG.worldW;
+        
+        drawBackground();
+        ctx.restore();
+        requestAnimationFrame(drawBackgroundTitle);
+    }
+}
+
+</script>
+</body>
+</html>
+
+```

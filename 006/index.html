@@ -1,1 +1,613 @@
-none 006
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NEKO FOREST RUN</title>
+    <style>
+        /* CSS: 全体リセットとフルスクリーン設定 */
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body, html { width: 100%; height: 100%; background-color: #0a1f0a; overflow: hidden; touch-action: none; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        #game-container { position: relative; width: 100%; height: 100%; }
+        canvas { display: block; width: 100%; height: 100%; }
+
+        /* UIオーバーレイ共通 */
+        .ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(10, 30, 10, 0.8); color: #fff; z-index: 10; }
+        .ui-layer.active { display: flex; }
+
+        h1 { font-size: 52px; margin-bottom: 20px; color: #a4f068; text-shadow: 0 0 15px #4caf50; text-align: center; font-weight: 900; letter-spacing: 2px;}
+        h2 { font-size: 36px; margin-bottom: 10px; color: #ff9800; }
+        p.score-text { font-size: 24px; margin-bottom: 30px; color: #e8f5e9; }
+
+        .btn { padding: 15px 50px; font-size: 26px; font-weight: bold; color: #fff; background: #4caf50; border: 3px solid #81c784; border-radius: 12px; cursor: pointer; box-shadow: 0 6px 15px rgba(76, 175, 80, 0.5); margin-bottom: 20px; transition: transform 0.1s, background 0.2s; }
+        .btn:active { transform: scale(0.95); background: #388e3c; }
+
+        /* カスタム設定パネル */
+        .settings-panel { background: rgba(255,255,255,0.1); padding: 15px; border-radius: 12px; text-align: center; font-size: 14px; margin-top: 20px; border: 1px solid rgba(255,255,255,0.2); }
+        .file-label { display: inline-block; padding: 8px 12px; background: #2e7d32; border-radius: 6px; cursor: pointer; margin: 5px; font-weight: bold; transition: background 0.2s;}
+        .file-label:hover { background: #388e3c; }
+        .file-label input { display: none; }
+        .btn-small { padding: 8px 12px; background: #d32f2f; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin: 5px; font-weight: bold;}
+
+        /* フルスクリーンボタン */
+        #btn-fullscreen { position: absolute; top: 10px; right: 10px; padding: 10px; font-size: 12px; background: rgba(255,255,255,0.15); border: 1px solid #fff; color: #fff; cursor: pointer; border-radius: 6px; z-index: 20; display: none; }
+
+        /* 縦画面警告用 */
+        #ui-portrait { background: #000; z-index: 100; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <button id="btn-fullscreen">FULL SCREEN</button>
+
+    <div id="ui-title" class="ui-layer active">
+        <h1>NEKO FOREST RUN</h1>
+        <button id="btn-play" class="btn">PLAY</button>
+        <div class="settings-panel">
+            <p style="margin-bottom: 10px; color: #c8e6c9;">【画像カスタマイズ】</p>
+            <label class="file-label">
+                ねこ画像
+                <input type="file" id="input-player-img" accept="image/*">
+            </label>
+            <label class="file-label">
+                森の背景
+                <input type="file" id="input-bg-img" accept="image/*">
+            </label>
+            <button id="btn-reset-img" class="btn-small">RESET</button>
+        </div>
+    </div>
+
+    <div id="ui-gameover" class="ui-layer">
+        <h2>GAME OVER...</h2>
+        <p class="score-text">Survival Time: <span id="result-score">0</span> s</p>
+        <button id="btn-retry" class="btn">RETRY</button>
+    </div>
+
+    <div id="ui-portrait" class="ui-layer">
+        <h2 style="color: #a4f068;">Please Rotate</h2>
+        <p>画面を横にしてね</p>
+    </div>
+</div>
+
+<script>
+/**
+ * 1. CONFIG: ゲーム全体の設定 (難易度UP版)
+ */
+const CONFIG = {
+    worldW: 960,
+    worldH: 540,
+    playerSize: 46,       // 猫のサイズ
+    baseSpeed: 500,       // 【難易度UP】障害物の基本速度 (px/sec)
+    speedIncrement: 25,   // 【難易度UP】1秒ごとの速度増加量
+    spawnInterval: 0.8,   // 【難易度UP】障害物出現間隔(sec)を短縮
+    itemSpawnInterval: 6.0, // 回復アイテム(マタタビ)の出現間隔(sec)
+    minSpawnY: 40,        // 上下の出現余白
+    maxSpawnY: 460,
+    maxLives: 3,          // 最大ライフ数
+    invincibleTime: 1.5   // ダメージ後の無敵時間(秒)
+};
+
+/**
+ * 2. グローバル変数・状態管理
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let state = 'title'; // 'title', 'playing', 'gameover'
+let isPaused = false;
+let lastTime = 0;
+let score = 0;
+let speedMult = 1.0;
+
+let spawnTimer = 0;
+let itemSpawnTimer = 0;
+
+let lives = CONFIG.maxLives;
+let invincibleTimer = 0; // 無敵時間のタイマー
+
+// 画面変換用
+let scale = 1, offsetX = 0, offsetY = 0;
+
+// エンティティ
+let player = { x: 150, y: CONFIG.worldH / 2, w: CONFIG.playerSize, h: CONFIG.playerSize };
+let obstacles = [];
+let items = []; // 回復アイテム配列
+
+// 木漏れ日のボケエフェクト用背景オブジェクト
+const bokehCircles = [
+    {x: 150, y: 100, r: 80}, {x: 450, y: 300, r: 120},
+    {x: 750, y: 150, r: 60}, {x: 850, y: 400, r: 90},
+    {x: 300, y: 450, r: 70}
+];
+
+// ドラッグ入力用
+let pointer = { isDown: false, clientY: 0 };
+
+// カスタム画像
+let customImgs = { player: null, bg: null };
+const storageKeys = { player: 'neko_forest_player', bg: 'neko_forest_bg' };
+
+/**
+ * 3. DOMエレメントの取得とイベント設定
+ */
+const uiTitle = document.getElementById('ui-title');
+const uiGameover = document.getElementById('ui-gameover');
+const uiPortrait = document.getElementById('ui-portrait');
+const btnPlay = document.getElementById('btn-play');
+const btnRetry = document.getElementById('btn-retry');
+const resultScore = document.getElementById('result-score');
+const btnFullscreen = document.getElementById('btn-fullscreen');
+const inputPlayerImg = document.getElementById('input-player-img');
+const inputBgImg = document.getElementById('input-bg-img');
+const btnResetImg = document.getElementById('btn-reset-img');
+
+btnPlay.addEventListener('click', startGame);
+btnRetry.addEventListener('click', startGame);
+
+canvas.addEventListener('pointerdown', e => {
+    pointer.isDown = true;
+    pointer.clientY = e.clientY;
+    e.preventDefault();
+});
+canvas.addEventListener('pointermove', e => {
+    if (pointer.isDown) pointer.clientY = e.clientY;
+    e.preventDefault();
+});
+canvas.addEventListener('pointerup', e => { pointer.isDown = false; e.preventDefault(); });
+canvas.addEventListener('pointercancel', e => { pointer.isDown = false; e.preventDefault(); });
+
+if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+    btnFullscreen.style.display = 'block';
+    btnFullscreen.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+            document.exitFullscreen();
+        }
+    });
+}
+
+/**
+ * 4. 画像読み込みとLocalStorage管理
+ */
+function loadSavedImages() {
+    const pData = localStorage.getItem(storageKeys.player);
+    const bgData = localStorage.getItem(storageKeys.bg);
+    if (pData) setCustomImage('player', pData);
+    if (bgData) setCustomImage('bg', bgData);
+}
+
+function setCustomImage(type, dataUrl) {
+    const img = new Image();
+    img.onload = () => { customImgs[type] = img; };
+    img.src = dataUrl;
+}
+
+function handleFileUpload(e, type) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        const dataUrl = ev.target.result;
+        setCustomImage(type, dataUrl);
+        localStorage.setItem(storageKeys[type], dataUrl);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+}
+
+inputPlayerImg.addEventListener('change', e => handleFileUpload(e, 'player'));
+inputBgImg.addEventListener('change', e => handleFileUpload(e, 'bg'));
+btnResetImg.addEventListener('click', () => {
+    customImgs.player = null;
+    customImgs.bg = null;
+    localStorage.removeItem(storageKeys.player);
+    localStorage.removeItem(storageKeys.bg);
+    alert('画像を初期設定（ねこ・森）に戻しました');
+});
+
+/**
+ * 5. 画面リサイズ・座標変換
+ */
+function computeView() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    if (window.innerHeight > window.innerWidth) {
+        isPaused = true;
+        uiPortrait.classList.add('active');
+    } else {
+        isPaused = false;
+        uiPortrait.classList.remove('active');
+    }
+
+    scale = Math.min(canvas.width / CONFIG.worldW, canvas.height / CONFIG.worldH);
+    offsetX = (canvas.width - CONFIG.worldW * scale) / 2;
+    offsetY = (canvas.height - CONFIG.worldH * scale) / 2;
+}
+
+window.addEventListener('resize', computeView);
+
+function screenToWorld(clientY) {
+    return (clientY - offsetY) / scale;
+}
+
+/**
+ * ハートを描画する関数
+ */
+function drawHeart(x, y, w, h) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = '#ff1744';
+    ctx.beginPath();
+    ctx.moveTo(0, h / 4);
+    ctx.bezierCurveTo(-w / 2, -h / 2, -w, h / 3, 0, h);
+    ctx.bezierCurveTo(w, h / 3, w / 2, -h / 2, 0, h / 4);
+    ctx.fill();
+    
+    // ハイライト
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(-w * 0.35, h * 0.1, w * 0.15, h * 0.25, -Math.PI/4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+/**
+ * 6. ゲームロジック
+ */
+function startGame() {
+    state = 'playing';
+    score = 0;
+    speedMult = 1.0;
+    
+    spawnTimer = 0;
+    itemSpawnTimer = 0;
+    
+    lives = CONFIG.maxLives;
+    invincibleTimer = 0;
+    
+    obstacles = [];
+    items = [];
+    
+    player.y = CONFIG.worldH / 2;
+    pointer.isDown = false;
+    
+    uiTitle.classList.remove('active');
+    uiGameover.classList.remove('active');
+    lastTime = performance.now();
+}
+
+function gameOver() {
+    state = 'gameover';
+    resultScore.innerText = Math.floor(score);
+    uiGameover.classList.add('active');
+}
+
+function spawnObstacle() {
+    const rangeY = CONFIG.maxSpawnY - CONFIG.minSpawnY;
+    const randY = CONFIG.minSpawnY + Math.random() * rangeY;
+    
+    // 3種類の障害物からランダムに決定
+    const types = ['tree', 'grass', 'bee'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    let obsW, obsH;
+    if (type === 'tree') {
+        obsW = 50; obsH = 100; // 縦長
+    } else if (type === 'grass') {
+        obsW = 60; obsH = 40;  // 横長で低い
+    } else {
+        obsW = 45; obsH = 35;  // ハチ（小さめ）
+    }
+
+    obstacles.push({
+        x: CONFIG.worldW + 50,
+        y: randY,
+        w: obsW,
+        h: obsH,
+        type: type,
+        animOffset: Math.random() * Math.PI * 2 // ハチの上下運動用
+    });
+}
+
+function spawnItem() {
+    const rangeY = CONFIG.maxSpawnY - CONFIG.minSpawnY;
+    const randY = CONFIG.minSpawnY + Math.random() * rangeY;
+    
+    // アイテム（マタタビ）は障害物より大きく設定
+    items.push({
+        x: CONFIG.worldW + 50,
+        y: randY,
+        w: 56, // 大きめ
+        h: 56, // 大きめ
+        animOffset: Math.random() * Math.PI * 2
+    });
+}
+
+function checkCollision(r1, r2) {
+    // 丸い猫に合わせて判定を少し甘め（内側）にする
+    const padding = 12;
+    return !(
+        r1.x + padding > r2.x + r2.w ||
+        r1.x + r1.w - padding < r2.x ||
+        r1.y + padding > r2.y + r2.h ||
+        r1.y + r1.h - padding < r2.y
+    );
+}
+
+function update(dt) {
+    if (state !== 'playing' || isPaused) return;
+
+    score += dt;
+    speedMult = 1.0 + (score * CONFIG.speedIncrement) / CONFIG.baseSpeed;
+
+    if (invincibleTimer > 0) {
+        invincibleTimer -= dt;
+    }
+
+    if (pointer.isDown) {
+        const targetY = screenToWorld(pointer.clientY);
+        player.y = targetY - player.h / 2;
+    }
+    player.y = Math.max(0, Math.min(player.y, CONFIG.worldH - player.h));
+
+    const currentSpeed = CONFIG.baseSpeed * speedMult;
+
+    // --- 障害物の生成と更新 ---
+    spawnTimer += dt;
+    const currentSpawnInterval = CONFIG.spawnInterval / speedMult;
+    if (spawnTimer >= currentSpawnInterval) {
+        spawnObstacle();
+        spawnTimer = 0;
+    }
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= currentSpeed * dt;
+        
+        // ハチの上下運動
+        if (obs.type === 'bee') {
+            obs.y += Math.sin(score * 15 + obs.animOffset) * 4;
+        }
+
+        // 衝突判定（無敵時間中は無効）
+        if (invincibleTimer <= 0 && checkCollision(player, obs)) {
+            lives--;
+            if (lives <= 0) {
+                gameOver();
+                return;
+            } else {
+                invincibleTimer = CONFIG.invincibleTime; // 無敵時間をセット
+            }
+        }
+
+        if (obs.x + obs.w < -50) {
+            obstacles.splice(i, 1);
+        }
+    }
+
+    // --- アイテム(マタタビ)の生成と更新 ---
+    itemSpawnTimer += dt;
+    if (itemSpawnTimer >= CONFIG.itemSpawnInterval) {
+        itemSpawnTimer = Math.random() * -2.0; 
+        spawnItem();
+    }
+
+    for (let i = items.length - 1; i >= 0; i--) {
+        let item = items[i];
+        
+        // アイテムは障害物のスピードより遅くする（例：半分のスピード）
+        item.x -= (currentSpeed * 0.5) * dt;
+        
+        // ふわふわ浮かせる
+        item.y += Math.sin(score * 8 + item.animOffset) * 1.5;
+
+        // 取得判定
+        if (checkCollision(player, item)) {
+            // ライフ回復（最大値を超えない）
+            lives = Math.min(CONFIG.maxLives, lives + 1);
+            items.splice(i, 1);
+            continue;
+        }
+
+        if (item.x + item.w < -50) {
+            items.splice(i, 1);
+        }
+    }
+}
+
+/**
+ * 7. 描画処理
+ */
+function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
+
+    // --- 背景描画 ---
+    if (customImgs.bg) {
+        ctx.drawImage(customImgs.bg, 0, 0, CONFIG.worldW, CONFIG.worldH);
+    } else {
+        // 森・木漏れ日風のグラデーション
+        const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.worldH);
+        grad.addColorStop(0, '#dcedc8');
+        grad.addColorStop(0.4, '#81c784');
+        grad.addColorStop(1, '#1b5e20');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+
+        // ボケエフェクト（木漏れ日）
+        ctx.fillStyle = 'rgba(255, 255, 200, 0.15)';
+        for (let b of bokehCircles) {
+            ctx.beginPath();
+            let bx = (b.x - (score * 20) % CONFIG.worldW);
+            if (bx < -b.r) bx += CONFIG.worldW + b.r * 2;
+            ctx.arc(bx, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // --- 回復アイテム(マタタビ)描画 ---
+    for (let item of items) {
+        // 光るエフェクト
+        ctx.shadowColor = '#64dd17';
+        ctx.shadowBlur = 20 + Math.sin(score * 10) * 5; // 明滅させる
+        
+        ctx.fillStyle = '#b2ff59';
+        ctx.beginPath();
+        // 葉っぱのような形状を描画
+        ctx.moveTo(item.x, item.y + item.h / 2);
+        ctx.quadraticCurveTo(item.x + item.w / 2, item.y, item.x + item.w, item.y + item.h / 2);
+        ctx.quadraticCurveTo(item.x + item.w / 2, item.y + item.h, item.x, item.y + item.h / 2);
+        ctx.fill();
+        
+        ctx.shadowBlur = 0; // リセット
+    }
+
+    // --- 障害物描画 ---
+    for (let obs of obstacles) {
+        if (obs.type === 'tree') {
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(obs.x + obs.w * 0.3, obs.y + obs.h * 0.3, obs.w * 0.4, obs.h * 0.7);
+            ctx.fillStyle = '#2e7d32';
+            ctx.beginPath();
+            ctx.arc(obs.x + obs.w / 2, obs.y + obs.h * 0.3, obs.w * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (obs.type === 'grass') {
+            ctx.fillStyle = '#0a3d11';
+            ctx.beginPath();
+            ctx.moveTo(obs.x, obs.y + obs.h);
+            ctx.lineTo(obs.x + obs.w * 0.25, obs.y);
+            ctx.lineTo(obs.x + obs.w * 0.5, obs.y + obs.h * 0.5);
+            ctx.lineTo(obs.x + obs.w * 0.75, obs.y + obs.h * 0.1);
+            ctx.lineTo(obs.x + obs.w, obs.y + obs.h);
+            ctx.fill();
+        } else if (obs.type === 'bee') {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.w * 0.4, obs.y + obs.h * 0.1, obs.w * 0.2, obs.h * 0.3, Math.PI/4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffeb3b';
+            ctx.beginPath();
+            ctx.ellipse(obs.x + obs.w / 2, obs.y + obs.h * 0.6, obs.w * 0.5, obs.h * 0.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(obs.x + obs.w * 0.3, obs.y + obs.h * 0.25, obs.w * 0.15, obs.h * 0.7);
+            ctx.fillRect(obs.x + obs.w * 0.6, obs.y + obs.h * 0.25, obs.w * 0.15, obs.h * 0.7);
+        }
+    }
+
+    // --- プレイヤー（ねこ）描画 ---
+    // 無敵時間中は高速点滅させる
+    if (invincibleTimer <= 0 || Math.floor(invincibleTimer * 15) % 2 === 0) {
+        if (customImgs.player) {
+            ctx.drawImage(customImgs.player, player.x, player.y, player.w, player.h);
+        } else {
+            const cx = player.x + player.w / 2;
+            const cy = player.y + player.h / 2;
+            const r = player.w / 2;
+            
+            ctx.fillStyle = '#ffb300';
+            
+            ctx.beginPath();
+            ctx.moveTo(cx - r * 0.8, cy - r * 0.5);
+            ctx.lineTo(cx - r * 0.9, cy - r * 1.2);
+            ctx.lineTo(cx - r * 0.2, cy - r * 0.8);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(cx + r * 0.8, cy - r * 0.5);
+            ctx.lineTo(cx + r * 0.9, cy - r * 1.2);
+            ctx.lineTo(cx + r * 0.2, cy - r * 0.8);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#3e2723';
+            ctx.beginPath();
+            ctx.arc(cx - r * 0.4, cy - r * 0.1, r * 0.15, 0, Math.PI * 2);
+            ctx.arc(cx + r * 0.4, cy - r * 0.1, r * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#e91e63';
+            ctx.beginPath();
+            ctx.arc(cx, cy + r * 0.2, r * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // --- スコアとライフ描画 (プレイ中のみ) ---
+    if (state === 'playing') {
+        // スコア
+        ctx.fillStyle = '#fff';
+        ctx.font = '900 32px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 4;
+        ctx.fillText(`SCORE: ${Math.floor(score)}`, 20, 45);
+        
+        // ライフ (ハート)
+        ctx.shadowBlur = 2;
+        for (let i = 0; i < CONFIG.maxLives; i++) {
+            if (i < lives) {
+                // x, y, width, height
+                drawHeart(40 + i * 36, 75, 24, 24);
+            }
+        }
+        ctx.shadowBlur = 0;
+    }
+
+    ctx.restore();
+
+    // レターボックス（画面外の黒枠）
+    ctx.fillStyle = '#000';
+    if (offsetX > 0) {
+        ctx.fillRect(0, 0, offsetX, canvas.height);
+        ctx.fillRect(canvas.width - offsetX, 0, offsetX, canvas.height);
+    }
+    if (offsetY > 0) {
+        ctx.fillRect(0, 0, canvas.width, offsetY);
+        ctx.fillRect(0, canvas.height - offsetY, canvas.width, offsetY);
+    }
+}
+
+/**
+ * 8. メインループ
+ */
+function loop(timestamp) {
+    if (!lastTime) lastTime = timestamp;
+    const dt = (timestamp - lastTime) / 1000;
+    lastTime = timestamp;
+
+    if (dt < 0.1) {
+        update(dt);
+    }
+    
+    draw();
+    requestAnimationFrame(loop);
+}
+
+/**
+ * 9. 初期化
+ */
+function init() {
+    loadSavedImages();
+    computeView();
+    requestAnimationFrame(loop);
+}
+
+// 起動
+init();
+
+</script>
+</body>
+</html>

@@ -1,1 +1,700 @@
-none 002
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DOG RUN</title>
+    <style>
+        /* === CSS === */
+        * { box-sizing: border-box; touch-action: none; user-select: none; }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #0b1a0b; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+        }
+        #gameCanvas {
+            position: absolute;
+            background-color: #2d4c1e;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+        /* UI Overlays */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .ui-panel {
+            background: rgba(20, 40, 20, 0.8);
+            padding: 20px 40px; border-radius: 12px; border: 2px solid #5a8231;
+            text-align: center; pointer-events: auto;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        }
+        h1 { font-size: 48px; margin: 0 0 10px 0; color: #a2e043; text-shadow: 0 0 10px #7eb832; }
+        h2 { font-size: 32px; margin: 0 0 15px 0; color: #ffaa00; text-shadow: 0 0 10px #cc6600; }
+        p { margin: 10px 0; font-size: 16px; color: #eef8e0; }
+        
+        button {
+            background: #7eb832; color: #000; border: none; padding: 15px 40px;
+            font-size: 24px; font-weight: bold; border-radius: 30px; cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.5); transition: transform 0.1s;
+            margin: 10px;
+        }
+        button:active { transform: scale(0.95); }
+        button#btnRetry { background: #ffaa00; }
+        
+        /* New Record Badge */
+        #newRecordBadge {
+            font-size: 22px; font-weight: bold; color: #ffd700;
+            text-shadow: 0 0 10px #ff8c00; margin-bottom: 10px;
+            animation: blink 1s infinite alternate;
+        }
+        @keyframes blink {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        /* Customization settings */
+        .settings { margin-top: 20px; font-size: 14px; text-align: left; background: rgba(255,255,255,0.1); padding: 15px; border-radius: 8px;}
+        .settings input[type="file"] { display: none; }
+        .file-label, .reset-btn {
+            display: inline-block; background: #3c5e23; color: #fff; padding: 6px 12px;
+            border-radius: 5px; cursor: pointer; margin: 5px 2px; font-size: 12px; border: 1px solid #5a8231;
+            transition: background 0.2s;
+        }
+        .file-label:active, .reset-btn:active { background: #2d4c1e; }
+        .reset-btn { background: #8c4332; border-color: #a85846; }
+        
+        /* HUD */
+        #hud {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 5;
+        }
+        #scoreDisplay {
+            position: absolute; top: 15px; left: 20px; font-size: 28px; font-weight: bold;
+            color: #fff; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        #lifeDisplay {
+            position: absolute; top: 50px; left: 20px; font-size: 24px; font-weight: bold;
+            color: #ff6b6b; text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        #btnFullscreen {
+            position: absolute; top: 15px; right: 20px; pointer-events: auto;
+            background: rgba(0,0,0,0.5); color: #fff; border: 1px solid #a2e043;
+            padding: 8px 16px; font-size: 14px; border-radius: 5px; cursor: pointer;
+        }
+
+        /* Portrait Warning */
+        #portraitWarning { background: #0b1a0b; z-index: 100; }
+        
+        /* Utilities */
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="hud" class="hidden">
+        <div id="scoreDisplay">TIME: 0.00s</div>
+        <div id="lifeDisplay">LIFE: ❤️❤️❤️</div>
+        <button id="btnFullscreen">FULL SCREEN</button>
+    </div>
+
+    <div id="titleScreen" class="overlay">
+        <div class="ui-panel">
+            <h1>DOG RUN</h1>
+            <p>画面を上下になぞって森の障害物を避けろ！<br>お肉を拾うとライフが回復するよ！</p>
+            <button id="btnPlay">PLAY</button>
+            
+            <div class="settings">
+                <p style="margin:0 0 5px 0; font-weight:bold; color:#a2e043;">[ カスタム画像 ]</p>
+                <label class="file-label">
+                    犬を変更
+                    <input type="file" id="inputPlayerImg" accept="image/*">
+                </label>
+                <label class="file-label">
+                    背景変更
+                    <input type="file" id="inputBgImg" accept="image/*">
+                </label><br>
+                <span class="reset-btn" id="btnResetImages">画像をリセット</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameOverScreen" class="overlay hidden">
+        <div class="ui-panel">
+            <h2>GAME OVER</h2>
+            <div id="newRecordBadge" class="hidden">🌟 NEW RECORD! 🌟</div>
+            <p id="resultScore" style="font-size:24px; font-weight:bold; color:#fff; margin-bottom: 5px;">LAST: 0.00s</p>
+            <p id="bestScore" style="font-size:20px; font-weight:bold; color:#ffaa00; margin-top: 0;">BEST: 0.00s</p>
+            <button id="btnRetry">RETRY</button>
+            <br>
+            <button id="btnTitle" style="font-size: 16px; padding: 10px 20px; background: #444; color: #fff;">TITLE</button>
+        </div>
+    </div>
+
+    <div id="portraitWarning" class="overlay hidden">
+        <div class="ui-panel">
+            <h2 style="color:#a2e043;">ROTATE DEVICE</h2>
+            <p>端末を横向きにして遊んでくださいわん。</p>
+        </div>
+    </div>
+
+    <script>
+        /* === CONFIGURATION === */
+        const CONFIG = {
+            worldW: 960,
+            worldH: 540,
+            player: {
+                w: 60,
+                h: 60,
+                x: 120
+            },
+            obstacle: {
+                speedX: 400,
+                spawnInterval: 1.1
+            },
+            item: {
+                speedX: 400,
+                spawnInterval: 4.5
+            },
+            colors: {
+                bgDark: '#1a3311',
+                bgLight: '#3f6626'
+            },
+            maxLife: 3 // ライフの上限
+        };
+
+        /* === STATE === */
+        let state = {
+            mode: 'TITLE',
+            prevMode: 'TITLE',
+            score: 0,
+            bestTime: 0,
+            life: 3,
+            timeSinceLastSpawn: 0,
+            timeSinceLastItemSpawn: 0,
+            obstacles: [],
+            items: [],
+            playerY: CONFIG.worldH / 2,
+            targetPlayerY: CONFIG.worldH / 2,
+            lastTime: 0,
+            scale: 1,
+            offsetX: 0,
+            offsetY: 0,
+            particles: [] // 木漏れ日エフェクト用
+        };
+
+        let images = { player: null, bg: null };
+
+        /* === DOM ELEMENTS === */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const titleScreen = document.getElementById('titleScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const portraitWarning = document.getElementById('portraitWarning');
+        const hud = document.getElementById('hud');
+        
+        const btnPlay = document.getElementById('btnPlay');
+        const btnRetry = document.getElementById('btnRetry');
+        const btnTitle = document.getElementById('btnTitle');
+        const btnFullscreen = document.getElementById('btnFullscreen');
+        
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const lifeDisplay = document.getElementById('lifeDisplay');
+        const resultScore = document.getElementById('resultScore');
+        const bestScoreDisplay = document.getElementById('bestScore');
+        const newRecordBadge = document.getElementById('newRecordBadge');
+        
+        const inputPlayerImg = document.getElementById('inputPlayerImg');
+        const inputBgImg = document.getElementById('inputBgImg');
+        const btnResetImages = document.getElementById('btnResetImages');
+
+        /* === INITIALIZATION === */
+        function init() {
+            canvas.width = CONFIG.worldW;
+            canvas.height = CONFIG.worldH;
+            
+            if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
+                btnFullscreen.style.display = 'none';
+            }
+
+            // 自己ベストのロード
+            const savedBest = localStorage.getItem('dog_run_best_time');
+            if (savedBest) {
+                state.bestTime = parseFloat(savedBest);
+            }
+
+            // 木漏れ日パーティクルの初期化
+            for(let i=0; i<15; i++) {
+                state.particles.push({
+                    x: Math.random() * CONFIG.worldW,
+                    y: Math.random() * CONFIG.worldH,
+                    s: Math.random() * 80 + 40,
+                    a: Math.random() * 0.15 + 0.05,
+                    vx: -(Math.random() * 20 + 10)
+                });
+            }
+
+            loadCustomImages();
+            setupEvents();
+            resize();
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* === EVENT LISTENERS === */
+        function setupEvents() {
+            window.addEventListener('resize', resize);
+            window.addEventListener('pointerdown', handlePointer);
+            window.addEventListener('pointermove', handlePointer);
+            window.addEventListener('touchstart', (e) => {
+                if(e.target === canvas) e.preventDefault();
+            }, { passive: false });
+
+            btnPlay.addEventListener('click', startGame);
+            btnRetry.addEventListener('click', startGame);
+            btnTitle.addEventListener('click', showTitle);
+            
+            btnFullscreen.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => console.log(err));
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+
+            inputPlayerImg.addEventListener('change', (e) => handleImageUpload(e, 'dog_custom_player'));
+            inputBgImg.addEventListener('change', (e) => handleImageUpload(e, 'dog_custom_bg'));
+            
+            btnResetImages.addEventListener('click', () => {
+                localStorage.removeItem('dog_custom_player');
+                localStorage.removeItem('dog_custom_bg');
+                images.player = null;
+                images.bg = null;
+                alert('画像をリセットしました。');
+            });
+        }
+
+        /* === SCREEN RESIZE & SCALING === */
+        function resize() {
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            const isPortrait = winH > winW;
+
+            if (isPortrait) {
+                portraitWarning.classList.remove('hidden');
+                if (state.mode === 'PLAYING') {
+                    state.prevMode = state.mode;
+                    state.mode = 'PAUSED';
+                }
+            } else {
+                portraitWarning.classList.add('hidden');
+                if (state.mode === 'PAUSED') {
+                    state.mode = state.prevMode;
+                }
+            }
+
+            state.scale = Math.min(winW / CONFIG.worldW, winH / CONFIG.worldH);
+            const displayW = CONFIG.worldW * state.scale;
+            const displayH = CONFIG.worldH * state.scale;
+            
+            state.offsetX = (winW - displayW) / 2;
+            state.offsetY = (winH - displayH) / 2;
+
+            canvas.style.width = displayW + 'px';
+            canvas.style.height = displayH + 'px';
+            canvas.style.left = state.offsetX + 'px';
+            canvas.style.top = state.offsetY + 'px';
+        }
+
+        function screenToWorld(screenY) {
+            return (screenY - state.offsetY) / state.scale;
+        }
+
+        function handlePointer(e) {
+            if (state.mode !== 'PLAYING') return;
+            const worldY = screenToWorld(e.clientY);
+            const halfH = CONFIG.player.h / 2;
+            state.targetPlayerY = Math.max(halfH, Math.min(CONFIG.worldH - halfH, worldY));
+        }
+
+        /* === GAME LOGIC === */
+        function startGame() {
+            state.score = 0;
+            state.life = 3; // 初期ライフ
+            state.obstacles = [];
+            state.items = [];
+            state.timeSinceLastSpawn = CONFIG.obstacle.spawnInterval;
+            state.timeSinceLastItemSpawn = 0;
+            state.playerY = CONFIG.worldH / 2;
+            state.targetPlayerY = CONFIG.worldH / 2;
+            
+            updateLifeDisplay();
+            titleScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            hud.classList.remove('hidden');
+            
+            state.mode = 'PLAYING';
+            state.lastTime = performance.now();
+        }
+
+        function showTitle() {
+            gameOverScreen.classList.add('hidden');
+            hud.classList.add('hidden');
+            titleScreen.classList.remove('hidden');
+            state.mode = 'TITLE';
+        }
+
+        function gameOver() {
+            state.mode = 'GAMEOVER';
+            hud.classList.add('hidden');
+            gameOverScreen.classList.remove('hidden');
+            
+            // ハイスコア判定
+            let isNewRecord = false;
+            if (state.score > state.bestTime) {
+                state.bestTime = state.score;
+                localStorage.setItem('dog_run_best_time', state.bestTime.toString());
+                isNewRecord = true;
+            }
+
+            // スコア表示の更新
+            resultScore.textContent = `LAST: ${state.score.toFixed(2)}s`;
+            bestScoreDisplay.textContent = `BEST: ${state.bestTime.toFixed(2)}s`;
+            
+            if (isNewRecord) {
+                newRecordBadge.classList.remove('hidden');
+            } else {
+                newRecordBadge.classList.add('hidden');
+            }
+        }
+
+        function updateLifeDisplay() {
+            let hearts = '';
+            for(let i = 0; i < state.life; i++) hearts += '❤️';
+            lifeDisplay.textContent = `LIFE: ${hearts}`;
+        }
+
+        function spawnObstacle() {
+            const types = ['tree', 'thorn', 'bee'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            
+            let w, h;
+            if (type === 'tree') {
+                w = 60; h = 150 + Math.random() * 100;
+            } else if (type === 'thorn') {
+                w = 70; h = 70;
+            } else { // bee
+                w = 60; h = 45;
+            }
+
+            const y = Math.random() * (CONFIG.worldH - h);
+            
+            state.obstacles.push({
+                x: CONFIG.worldW, y: y, w: w, h: h, type: type,
+                timeOffset: Math.random() * Math.PI * 2 
+            });
+        }
+
+        function spawnItem() {
+            const w = 55; const h = 45;
+            const y = Math.random() * (CONFIG.worldH - h);
+            state.items.push({ x: CONFIG.worldW, y: y, w: w, h: h });
+        }
+
+        function checkCollision(px, py, pw, ph, obj) {
+            const marginX = 8;
+            const marginY = 8;
+            return px + marginX < obj.x + obj.w &&
+                   px + pw - marginX > obj.x &&
+                   py + marginY < obj.y + obj.h &&
+                   py + ph - marginY > obj.y;
+        }
+
+        function update(dt) {
+            if (state.mode !== 'PLAYING') return;
+
+            state.score += dt;
+            scoreDisplay.textContent = `TIME: ${state.score.toFixed(2)}s`;
+
+            // プレイヤーの追従移動
+            state.playerY += (state.targetPlayerY - state.playerY) * 20 * dt;
+
+            // 木漏れ日エフェクトの移動
+            for (let p of state.particles) {
+                p.x += p.vx * dt;
+                if (p.x + p.s < 0) p.x = CONFIG.worldW + p.s;
+            }
+
+            // 障害物の出現
+            state.timeSinceLastSpawn += dt;
+            if (state.timeSinceLastSpawn >= CONFIG.obstacle.spawnInterval) {
+                spawnObstacle();
+                state.timeSinceLastSpawn = 0;
+            }
+
+            // アイテム（肉）の出現
+            state.timeSinceLastItemSpawn += dt;
+            if (state.timeSinceLastItemSpawn >= CONFIG.item.spawnInterval) {
+                spawnItem();
+                state.timeSinceLastItemSpawn = 0;
+            }
+
+            const px = CONFIG.player.x;
+            const py = state.playerY - CONFIG.player.h / 2;
+            const pw = CONFIG.player.w;
+            const ph = CONFIG.player.h;
+
+            let speedMult = 1 + (state.score / 40); // 難易度上昇
+
+            // アイテム（肉）の移動と当たり判定
+            for (let i = state.items.length - 1; i >= 0; i--) {
+                let item = state.items[i];
+                item.x -= CONFIG.item.speedX * speedMult * dt;
+
+                if (checkCollision(px, py, pw, ph, item)) {
+                    // お肉ゲット：最大ライフの上限を超えないように回復
+                    if (state.life < CONFIG.maxLife) {
+                        state.life++;
+                    }
+                    updateLifeDisplay();
+                    state.items.splice(i, 1);
+                    continue;
+                }
+
+                if (item.x + item.w < 0) {
+                    state.items.splice(i, 1);
+                }
+            }
+
+            // 障害物の移動と当たり判定
+            for (let i = state.obstacles.length - 1; i >= 0; i--) {
+                let obs = state.obstacles[i];
+                let speed = CONFIG.obstacle.speedX;
+                
+                if (obs.type === 'bee') {
+                    speed *= 1.3;
+                    obs.y += Math.sin(state.score * 5 + obs.timeOffset) * 2;
+                }
+                
+                obs.x -= speed * speedMult * dt;
+
+                if (checkCollision(px, py, pw, ph, obs)) {
+                    state.life--;
+                    updateLifeDisplay();
+                    state.obstacles.splice(i, 1);
+                    
+                    if (state.life <= 0) {
+                        gameOver();
+                        return;
+                    }
+                    continue;
+                }
+
+                if (obs.x + obs.w < 0) {
+                    state.obstacles.splice(i, 1);
+                }
+            }
+        }
+
+        /* === DRAWING === */
+        function draw() {
+            // 背景（森・木漏れ日）
+            if (images.bg) {
+                ctx.drawImage(images.bg, 0, 0, CONFIG.worldW, CONFIG.worldH);
+            } else {
+                let grad = ctx.createLinearGradient(0, 0, 0, CONFIG.worldH);
+                grad.addColorStop(0, CONFIG.colors.bgDark);
+                grad.addColorStop(1, CONFIG.colors.bgLight);
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+                
+                // 木漏れ日パーティクル描画
+                for (let p of state.particles) {
+                    let pGrad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.s);
+                    pGrad.addColorStop(0, `rgba(255, 255, 200, ${p.a})`);
+                    pGrad.addColorStop(1, 'rgba(255, 255, 200, 0)');
+                    ctx.fillStyle = pGrad;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.s, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // アイテム（肉）の描画
+            for (let item of state.items) {
+                ctx.save();
+                const cx = item.x + item.w/2;
+                const cy = item.y + item.h/2;
+                
+                // 骨
+                ctx.fillStyle = '#f0f0f0';
+                ctx.fillRect(item.x + 8, cy - 4, item.w - 16, 8);
+                ctx.beginPath(); ctx.arc(item.x + 10, cy - 5, 5, 0, Math.PI*2); ctx.arc(item.x + 10, cy + 5, 5, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(item.x + item.w - 10, cy - 5, 5, 0, Math.PI*2); ctx.arc(item.x + item.w - 10, cy + 5, 5, 0, Math.PI*2); ctx.fill();
+                
+                // 肉の中心部分
+                ctx.fillStyle = '#c0392b';
+                ctx.beginPath(); ctx.ellipse(cx, cy, item.w*0.35, item.h*0.4, 0, 0, Math.PI*2); ctx.fill();
+                // 肉のハイライト
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath(); ctx.ellipse(cx - 3, cy - 3, item.w*0.2, item.h*0.2, 0, 0, Math.PI*2); ctx.fill();
+                
+                ctx.restore();
+            }
+
+            // 障害物の描画
+            for (let obs of state.obstacles) {
+                ctx.save();
+                if (obs.type === 'tree') {
+                    // 丸太と葉っぱ
+                    ctx.fillStyle = '#4a2f1d';
+                    ctx.fillRect(obs.x + obs.w*0.3, obs.y, obs.w*0.4, obs.h);
+                    ctx.fillStyle = '#2d5e1e';
+                    ctx.beginPath();
+                    ctx.arc(obs.x + obs.w/2, obs.y + obs.w/2, obs.w*0.6, 0, Math.PI*2);
+                    ctx.arc(obs.x + obs.w/2, obs.y + obs.h - obs.w/2, obs.w*0.6, 0, Math.PI*2);
+                    ctx.fill();
+                } else if (obs.type === 'thorn') {
+                    // トゲ草
+                    ctx.fillStyle = '#5c7a29';
+                    ctx.beginPath();
+                    const cx = obs.x + obs.w/2;
+                    const cy = obs.y + obs.h/2;
+                    for (let j=0; j<10; j++) {
+                        let angle = (j / 10) * Math.PI * 2;
+                        let rOuter = obs.w/2;
+                        let rInner = obs.w/4;
+                        ctx.lineTo(cx + Math.cos(angle)*rOuter, cy + Math.sin(angle)*rOuter);
+                        ctx.lineTo(cx + Math.cos(angle+0.3)*rInner, cy + Math.sin(angle+0.3)*rInner);
+                    }
+                    ctx.fill();
+                    ctx.fillStyle = '#3a5214';
+                    ctx.beginPath(); ctx.arc(cx, cy, obs.w/3, 0, Math.PI*2); ctx.fill();
+                } else if (obs.type === 'bee') {
+                    // ハチ
+                    const cx = obs.x + obs.w/2;
+                    const cy = obs.y + obs.h/2;
+                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                    ctx.beginPath(); ctx.ellipse(cx - 5, cy - 15, 12, 18, -0.5, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.ellipse(cx + 5, cy - 15, 10, 15, 0.2, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.beginPath(); ctx.ellipse(cx, cy, obs.w/2, obs.h/2, 0, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#222';
+                    ctx.fillRect(cx - 10, cy - obs.h/2, 6, obs.h);
+                    ctx.fillRect(cx + 5, cy - obs.h/2, 6, obs.h);
+                    ctx.beginPath(); ctx.arc(cx - 18, cy - 5, 4, 0, Math.PI*2); ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // プレイヤー（犬）の描画
+            const px = CONFIG.player.x;
+            const py = state.playerY - CONFIG.player.h / 2;
+            
+            if (images.player) {
+                ctx.drawImage(images.player, px, py, CONFIG.player.w, CONFIG.player.h);
+            } else {
+                const cx = px + CONFIG.player.w / 2;
+                const cy = py + CONFIG.player.h / 2;
+                const r = CONFIG.player.w / 2;
+                
+                ctx.save();
+                // たれ耳
+                ctx.fillStyle = '#6b4423';
+                ctx.beginPath();
+                ctx.ellipse(cx - r*0.7, cy - r*0.1, r*0.35, r*0.7, -0.4, 0, Math.PI*2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(cx + r*0.7, cy - r*0.1, r*0.35, r*0.7, 0.4, 0, Math.PI*2);
+                ctx.fill();
+                
+                // 顔の輪郭
+                ctx.fillStyle = '#e6c280';
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+                
+                // マズル
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(cx, cy + r*0.3, r*0.55, 0, Math.PI*2); ctx.fill();
+                
+                // 目
+                ctx.fillStyle = '#111';
+                ctx.beginPath(); ctx.arc(cx - r*0.35, cy - r*0.15, r*0.12, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(cx + r*0.35, cy - r*0.15, r*0.12, 0, Math.PI*2); ctx.fill();
+                
+                // 鼻
+                ctx.fillStyle = '#111';
+                ctx.beginPath();
+                ctx.ellipse(cx, cy + r*0.15, r*0.18, r*0.12, 0, 0, Math.PI*2);
+                ctx.fill();
+                
+                // 口
+                ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(cx, cy + r*0.25); ctx.lineTo(cx, cy + r*0.45); ctx.stroke();
+                ctx.beginPath(); ctx.arc(cx - r*0.2, cy + r*0.45, r*0.2, 0, Math.PI, false); ctx.stroke();
+                ctx.beginPath(); ctx.arc(cx + r*0.2, cy + r*0.45, r*0.2, 0, Math.PI, false); ctx.stroke();
+                
+                ctx.restore();
+            }
+        }
+
+        function gameLoop(timestamp) {
+            let dt = (timestamp - state.lastTime) / 1000;
+            if (dt > 0.1) dt = 0.1;
+            state.lastTime = timestamp;
+
+            if (state.mode !== 'PAUSED') {
+                update(dt);
+                draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* === IMAGE HANDLING (LocalStorage) === */
+        function loadCustomImages() {
+            const savedPlayer = localStorage.getItem('dog_custom_player');
+            const savedBg = localStorage.getItem('dog_custom_bg');
+
+            if (savedPlayer) {
+                let img = new Image();
+                img.onload = () => images.player = img;
+                img.src = savedPlayer;
+            }
+            if (savedBg) {
+                let img = new Image();
+                img.onload = () => images.bg = img;
+                img.src = savedBg;
+            }
+        }
+
+        function handleImageUpload(event, storageKey) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const dataUrl = e.target.result;
+                try {
+                    localStorage.setItem(storageKey, dataUrl);
+                    let img = new Image();
+                    img.onload = () => {
+                        if (storageKey === 'dog_custom_player') images.player = img;
+                        if (storageKey === 'dog_custom_bg') images.bg = img;
+                    };
+                    img.src = dataUrl;
+                    alert('画像を適用しましたわん！');
+                } catch (error) {
+                    alert('画像のサイズが大きすぎて保存できませんでした。よりファイルサイズの小さい画像を選んでください。');
+                }
+            };
+            reader.readAsDataURL(file);
+            event.target.value = '';
+        }
+
+        window.onload = init;
+
+    </script>
+</body>
+</html>

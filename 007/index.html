@@ -1,1 +1,790 @@
-none 007
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>GALAXY GLIDE - 宇宙ランナー</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #03030c;
+            font-family: 'Courier New', Courier, sans-serif;
+            position: relative;
+            touch-action: none;
+        }
+        /* キャンバス配置（中央にレターボックス配置） */
+        #gameCanvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: block;
+            box-shadow: 0 0 30px rgba(0, 168, 255, 0.3);
+        }
+        /* UIレイヤー共通 */
+        .ui-layer {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 960px; /* 固定仮想サイズ */
+            height: 540px;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .ui-content {
+            pointer-events: auto;
+            text-align: center;
+            background: rgba(5, 5, 20, 0.85);
+            padding: 30px 50px;
+            border-radius: 16px;
+            border: 2px solid #00a8ff;
+            box-shadow: 0 0 20px rgba(0, 168, 255, 0.5);
+        }
+        h1 {
+            font-size: 56px;
+            font-weight: 900;
+            margin-bottom: 15px;
+            text-shadow: 0 0 15px #00a8ff, 0 0 30px #00a8ff;
+            letter-spacing: 4px;
+            color: #00f0ff;
+        }
+        .desc-text {
+            font-size: 15px;
+            color: #9aa5b1;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+        }
+        .score-text {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        button {
+            padding: 12px 35px;
+            font-size: 24px;
+            font-weight: bold;
+            font-family: inherit;
+            background: #00a8ff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #0077b3;
+            margin: 10px;
+            transition: transform 0.1s, background 0.2s;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+        button:active {
+            transform: translateY(4px);
+            box-shadow: none;
+        }
+        #playBtn {
+            background: #00f0ff;
+            color: #050514;
+            box-shadow: 0 4px 0 #00b3bf;
+        }
+        /* フルスクリーンボタン用 */
+        #fsBtn {
+            background: #9b51e0;
+            box-shadow: 0 4px 0 #7033a8;
+            display: none;
+        }
+        /* 画像カスタムセクション */
+        .custom-section {
+            margin-top: 20px;
+            border-top: 1px dashed #334e68;
+            padding-top: 15px;
+            font-size: 13px;
+            color: #9aa5b1;
+        }
+        .file-label {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #1f2933;
+            border: 1px solid #3e4c59;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            color: #cbd5e1;
+        }
+        .file-label input { display: none; }
+        #resetBtn {
+            padding: 4px 10px;
+            font-size: 12px;
+            background: #486581;
+            box-shadow: 0 2px 0 #334e68;
+        }
+        /* 縦画面警告オーバーレイ */
+        #portraitOverlay {
+            position: fixed;
+            top:0; left:0; width:100%; height:100%;
+            background: #050510;
+            color: #00f0ff;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            text-align: center;
+            padding: 20px;
+        }
+        #portraitOverlay p {
+            font-size: 24px;
+            font-weight: bold;
+            margin-top: 15px;
+            text-shadow: 0 0 10px #00f0ff;
+        }
+        .phone-icon {
+            width: 50px;
+            height: 80px;
+            border: 3px solid #00f0ff;
+            border-radius: 6px;
+            box-shadow: 0 0 15px #00f0ff;
+            animation: rotatePhone 2s ease-in-out infinite;
+        }
+        @keyframes rotatePhone {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(-90deg); }
+            100% { transform: rotate(-90deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="titleScreen" class="ui-layer">
+        <div class="ui-content">
+            <h1>GALAXY GLIDE</h1>
+            <p class="desc-text">【操作】画面左側：上下スライド移動 ／ 画面右側：タップでレーザー射撃</p>
+            <button id="playBtn">LAUNCH</button>
+            <button id="fsBtn">FULLSCREEN</button>
+            <div class="custom-section">
+                <p>自作画像を設定できます</p>
+                <label class="file-label">宇宙船変更<input type="file" id="pImgInput" accept="image/*"></label>
+                <label class="file-label">星雲背景変更<input type="file" id="bgImgInput" accept="image/*"></label>
+                <br>
+                <button id="resetBtn">宇宙グラフィックに戻す</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameOverScreen" class="ui-layer">
+        <div class="ui-content">
+            <h1>MISSION FAILED</h1>
+            <p class="score-text">
+                DISTANCE: <span id="finalScore">0</span> LY<br>
+                DEBRIS KILLS: <span id="finalKills">0</span>
+            </p>
+            <button id="retryBtn">RETRY</button>
+        </div>
+    </div>
+
+    <div id="portraitOverlay">
+        <div class="phone-icon"></div>
+        <p>SCREEN ROTATION REQUIRED</p>
+    </div>
+
+    <script>
+        // ==========================================
+        // CONFIG (設定パラメータ)
+        // ==========================================
+        const CONFIG = {
+            worldW: 960,
+            worldH: 540,
+            player: {
+                startX: 140,
+                radius: 18,
+                followSpeed: 0.22,       // 移動のレスポンスを少し向上
+                maxLives: 3,             // ライフ数
+                invincibleDuration: 1.5  // 被弾後の無敵時間（秒）
+            },
+            bullet: {
+                speed: 1000,             // 弾速をより爽快に高速化
+                radius: 6,               
+                color: "#00ffcc"
+            },
+            obstacle: {
+                spawnInterval: 750, 
+                speedMin: 380,      
+                speedMax: 480,      
+                speedUp: 6,         
+                radiusMin: 12,
+                radiusMax: 38,
+                margin: 35          
+            },
+            bg: {
+                colorSpace: "#020208",
+                colorNebula1: "#0a0018",
+                colorNebula2: "#001020"
+            },
+            starsCount: 60
+        };
+
+        // ==========================================
+        // グローバル状態・ゲーム変数
+        // ==========================================
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const titleScreen = document.getElementById("titleScreen");
+        const gameOverScreen = document.getElementById("gameOverScreen");
+        const portraitOverlay = document.getElementById("portraitOverlay");
+        const playBtn = document.getElementById("playBtn");
+        const fsBtn = document.getElementById("fsBtn");
+        const retryBtn = document.getElementById("retryBtn");
+        const resetBtn = document.getElementById("resetBtn");
+        const pImgInput = document.getElementById("pImgInput");
+        const bgImgInput = document.getElementById("bgImgInput");
+        const finalScore = document.getElementById("finalScore");
+        const finalKills = document.getElementById("finalKills");
+
+        let viewScale = 1;
+        let viewOffsetX = 0;
+        let viewOffsetY = 0;
+
+        let gameState = 'TITLE';
+        let lastTime = 0;
+        let playTime = 0;
+        let isPaused = false;
+
+        // エンティティ状態
+        let playerY = CONFIG.worldH / 2;
+        let targetY = CONFIG.worldH / 2;
+        let lives = CONFIG.player.maxLives;
+        let invincibleTimer = 0;
+
+        let obstacles = [];
+        let bullets = [];      
+        let stars = []; 
+        let nextSpawnTime = 0;
+        let killCount = 0;     
+
+        let playerImg = null;
+        let bgImg = null;
+
+        // ==========================================
+        // 初期化とリサイズ処理
+        // ==========================================
+        function init() {
+            setupEventListeners();
+            loadCustomImages();
+            checkFullscreenSupport();
+            initStars();
+            resizeCanvas();
+            changeState('TITLE');
+            requestAnimationFrame(gameLoop);
+        }
+
+        function initStars() {
+            stars = [];
+            for (let i = 0; i < CONFIG.starsCount; i++) {
+                stars.push({
+                    x: Math.random() * CONFIG.worldW,
+                    y: Math.random() * CONFIG.worldH,
+                    size: Math.random() * 2 + 0.5,
+                    speedFactor: Math.random() * 0.6 + 0.4
+                });
+            }
+        }
+
+        function resizeCanvas() {
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+
+            if (winH > winW) {
+                portraitOverlay.style.display = "flex";
+                isPaused = true;
+            } else {
+                portraitOverlay.style.display = "none";
+                isPaused = false;
+            }
+
+            const targetRatio = CONFIG.worldW / CONFIG.worldH;
+            const currentRatio = winW / winH;
+
+            let renderW, renderH;
+            if (currentRatio > targetRatio) {
+                renderH = winH;
+                renderW = winH * targetRatio;
+            } else {
+                renderW = winW;
+                renderH = winW / targetRatio;
+            }
+
+            canvas.width = renderW;
+            canvas.height = renderH;
+
+            viewScale = renderW / CONFIG.worldW;
+            viewOffsetX = (winW - renderW) / 2;
+            viewOffsetY = (winH - renderH) / 2;
+
+            canvas.style.width = renderW + "px";
+            canvas.style.height = renderH + "px";
+
+            [titleScreen, gameOverScreen].forEach(layer => {
+                layer.style.transform = `translate(-50%, -50%) scale(${viewScale})`;
+            });
+        }
+
+        function screenToWorld(screenX, screenY) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (screenX - rect.left) / viewScale;
+            const y = (screenY - rect.top) / viewScale;
+            return { x, y };
+        }
+
+        // ==========================================
+        // イベントリスナー設定（不具合修正：独立イベント方式）
+        // ==========================================
+        function setupEventListeners() {
+            window.addEventListener('resize', resizeCanvas);
+            window.addEventListener('orientationchange', resizeCanvas);
+
+            // 画面をタッチ・クリックした時（すべての入力をここで一括、左右の座標で役割を完全遮断）
+            window.addEventListener('pointerdown', (e) => {
+                if (gameState !== 'PLAYING' || isPaused) return;
+                
+                const worldPos = screenToWorld(e.clientX, e.clientY);
+                
+                // 画面の右半分をタップしたなら「弾を発射」
+                if (worldPos.x >= CONFIG.worldW / 2) {
+                    shootBullet();
+                } 
+                // 画面の左半分なら「移動のターゲット更新」
+                else {
+                    targetY = Math.max(CONFIG.player.radius, Math.min(CONFIG.worldH - CONFIG.player.radius, worldPos.y));
+                }
+            });
+
+            // 画面上をドラッグ（スライド）している時
+            window.addEventListener('pointermove', (e) => {
+                if (gameState !== 'PLAYING' || isPaused) return;
+
+                const worldPos = screenToWorld(e.clientX, e.clientY);
+                
+                // ドラッグ中であっても、指の位置が「左半分」にある時だけ移動処理を行う（右側のタップ誤射を完全防止）
+                if (worldPos.x < CONFIG.worldW / 2) {
+                    targetY = Math.max(CONFIG.player.radius, Math.min(CONFIG.worldH - CONFIG.player.radius, worldPos.y));
+                }
+            });
+
+            document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+            document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+            playBtn.addEventListener('click', () => changeState('PLAYING'));
+            retryBtn.addEventListener('click', () => changeState('PLAYING'));
+            
+            fsBtn.addEventListener('click', () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+
+            pImgInput.addEventListener('change', (e) => handleFileSelect(e, 'player'));
+            bgImgInput.addEventListener('change', (e) => handleFileSelect(e, 'bg'));
+            resetBtn.addEventListener('click', clearCustomImages);
+        }
+
+        function checkFullscreenSupport() {
+            if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+                fsBtn.style.display = "inline-block";
+            }
+        }
+
+        function shootBullet() {
+            bullets.push({
+                x: CONFIG.player.startX + CONFIG.player.radius * 1.5,
+                y: playerY,
+                radius: CONFIG.bullet.radius
+            });
+        }
+
+        // ==========================================
+        // 画像カスタム・ローカル保存システム
+        // ==========================================
+        function handleFileSelect(e, type) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const dataUrl = event.target.result;
+                try {
+                    localStorage.setItem('runner_img_' + type, dataUrl);
+                    applyImageData(dataUrl, type);
+                } catch(err) {
+                    alert("画像サイズが大きすぎるため保存できません。");
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function applyImageData(dataUrl, type) {
+            const img = new Image();
+            img.onload = () => {
+                if (type === 'player') playerImg = img;
+                if (type === 'bg') bgImg = img;
+            };
+            img.src = dataUrl;
+        }
+
+        function loadCustomImages() {
+            const storedPlayer = localStorage.getItem('runner_img_player');
+            if (storedPlayer) applyImageData(storedPlayer, 'player');
+
+            const storedBg = localStorage.getItem('runner_img_bg');
+            if (storedBg) applyImageData(storedBg, 'bg');
+        }
+
+        function clearCustomImages() {
+            localStorage.removeItem('runner_img_player');
+            localStorage.removeItem('runner_img_bg');
+            playerImg = null;
+            bgImg = null;
+            pImgInput.value = "";
+            bgImgInput.value = "";
+        }
+
+        // ==========================================
+        // ゲームステート管理
+        // ==========================================
+        function changeState(nextState) {
+            gameState = nextState;
+            
+            titleScreen.style.display = (gameState === 'TITLE') ? 'flex' : 'none';
+            gameOverScreen.style.display = (gameState === 'GAMEOVER') ? 'flex' : 'none';
+
+            if (gameState === 'PLAYING') {
+                playTime = 0;
+                killCount = 0;
+                lives = CONFIG.player.maxLives;
+                invincibleTimer = 0;
+                playerY = CONFIG.worldH / 2;
+                targetY = CONFIG.worldH / 2;
+                obstacles = [];
+                bullets = [];
+                initStars();
+                nextSpawnTime = performance.now() + CONFIG.obstacle.spawnInterval;
+            } else if (gameState === 'GAMEOVER') {
+                finalScore.textContent = Math.floor(playTime * 10);
+                finalKills.textContent = killCount;
+            }
+        }
+
+        // ==========================================
+        // ゲームコアロジック (Update / Collision)
+        // ==========================================
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            let dt = (timestamp - lastTime) / 1000;
+            if (dt > 0.1) dt = 0.1; 
+            lastTime = timestamp;
+
+            if (!isPaused) {
+                updateStars(dt);
+
+                if (gameState === 'PLAYING') {
+                    updateGame(dt, timestamp);
+                }
+            }
+            
+            drawGame(timestamp);
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updateStars(dt) {
+            const baseSpeed = gameState === 'PLAYING' ? 120 + (CONFIG.obstacle.speedUp * playTime * 0.2) : 40;
+            stars.forEach(star => {
+                star.x -= baseSpeed * star.speedFactor * dt;
+                if (star.x < 0) {
+                    star.x = CONFIG.worldW;
+                    star.y = Math.random() * CONFIG.worldH;
+                }
+            });
+        }
+
+        function updateGame(dt, currentTimestamp) {
+            playTime += dt;
+
+            if (invincibleTimer > 0) {
+                invincibleTimer -= dt;
+            }
+
+            // 1. プレイヤー位置の滑らかな移動
+            playerY += (targetY - playerY) * CONFIG.player.followSpeed;
+
+            // 2. 弾の移動と画面外削除
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const b = bullets[i];
+                b.x += CONFIG.bullet.speed * dt;
+                if (b.x - b.radius > CONFIG.worldW) {
+                    bullets.splice(i, 1);
+                }
+            }
+
+            // 3. 障害物の自動生成
+            if (currentTimestamp >= nextSpawnTime) {
+                spawnObstacle();
+                nextSpawnTime = currentTimestamp + CONFIG.obstacle.spawnInterval;
+            }
+
+            // 4. 障害物の移動と各種衝突判定
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.x -= obs.speed * dt;
+                obs.angle += obs.rotSpeed * dt;
+
+                // --- 判定A: 弾と障害物の交差（破壊判定） ---
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const b = bullets[j];
+                    const bDx = obs.x - b.x;
+                    const bDy = obs.y - b.y;
+                    const bDist = Math.sqrt(bDx * bDx + bDy * bDy);
+
+                    if (bDist < obs.radius + b.radius) {
+                        obstacles.splice(i, 1); // 障害物消滅
+                        bullets.splice(j, 1);   // 弾消滅
+                        killCount++;
+                        break;
+                    }
+                }
+
+                // すでに弾で破壊されていた場合はスキップ
+                if (!obstacles[i]) continue;
+
+                // --- 判定B: プレイヤーと障害物の交差（被弾・ライフ減算判定） ---
+                if (invincibleTimer <= 0) {
+                    const pDx = obs.x - CONFIG.player.startX;
+                    const pDy = obs.y - playerY;
+                    const pDist = Math.sqrt(pDx * pDx + pDy * pDy);
+                    const minPDist = CONFIG.player.radius + obs.radius;
+
+                    if (pDist < minPDist) {
+                        lives--;
+                        if (lives <= 0) {
+                            changeState('GAMEOVER');
+                            return;
+                        } else {
+                            invincibleTimer = CONFIG.player.invincibleDuration; 
+                        }
+                    }
+                }
+
+                if (obs.x + obs.radius < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+
+        function spawnObstacle() {
+            const radius = CONFIG.obstacle.radiusMin + Math.random() * (CONFIG.obstacle.radiusMax - CONFIG.obstacle.radiusMin);
+            const minY = CONFIG.obstacle.margin + radius;
+            const maxY = CONFIG.worldH - CONFIG.obstacle.margin - radius;
+            const y = minY + Math.random() * (maxY - minY);
+
+            const speedMultiplier = CONFIG.obstacle.speedUp * playTime;
+            const speed = (CONFIG.obstacle.speedMin + speedMultiplier) + Math.random() * (CONFIG.obstacle.speedMax - CONFIG.obstacle.speedMin);
+
+            const type = Math.floor(Math.random() * 3); 
+
+            obstacles.push({
+                x: CONFIG.worldW + radius,
+                y: y,
+                radius: radius,
+                speed: speed,
+                type: type,
+                angle: Math.random() * Math.PI * 2,
+                rotSpeed: (Math.random() - 0.5) * 3
+            });
+        }
+
+        // ==========================================
+        // 描画システム 
+        // ==========================================
+        function drawGame(timestamp) {
+            ctx.save();
+            ctx.scale(viewScale, viewScale);
+
+            // 1. 宇宙背景（星雲グラデーション）の描画
+            if (bgImg) {
+                ctx.drawImage(bgImg, 0, 0, CONFIG.worldW, CONFIG.worldH);
+            } else {
+                ctx.fillStyle = CONFIG.bg.colorSpace;
+                ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+
+                const gradient = ctx.createRadialGradient(CONFIG.worldW*0.7, CONFIG.worldH*0.3, 50, CONFIG.worldW*0.6, CONFIG.worldH*0.4, CONFIG.worldW*0.8);
+                gradient.addColorStop(0, CONFIG.bg.colorNebula1);
+                gradient.addColorStop(0.5, CONFIG.bg.colorNebula2);
+                gradient.addColorStop(1, "transparent");
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+            }
+
+            // 2. 流れる星粒の描画
+            ctx.fillStyle = "#ffffff";
+            stars.forEach(star => {
+                ctx.globalAlpha = star.speedFactor;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+            ctx.globalAlpha = 1.0;
+
+            // 3. レーザー弾の描画
+            bullets.forEach(b => {
+                ctx.save();
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = CONFIG.bullet.color;
+                ctx.fillStyle = CONFIG.bullet.color;
+                ctx.fillRect(b.x - b.radius * 2, b.y - b.radius * 0.5, b.radius * 4, b.radius);
+                ctx.restore();
+            });
+
+            // 4. 障害物（3種）の描画
+            obstacles.forEach(obs => {
+                ctx.save();
+                ctx.translate(obs.x, obs.y);
+                ctx.rotate(obs.angle);
+
+                if (obs.type === 0) {
+                    // 小惑星
+                    ctx.fillStyle = "#655850";
+                    ctx.strokeStyle = "#40352e";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    for (let i = 0; i < 7; i++) {
+                        const angle = (i / 7) * Math.PI * 2;
+                        const r = obs.radius * (0.8 + Math.sin(i * 1.7) * 0.2);
+                        const px = Math.cos(angle) * r;
+                        const py = Math.sin(angle) * r;
+                        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                } else if (obs.type === 1) {
+                    // 宇宙デブリ
+                    ctx.fillStyle = "#a0a5ab";
+                    ctx.strokeStyle = "#ffffff";
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(-obs.radius, -obs.radius*0.3);
+                    ctx.lineTo(obs.radius*0.5, -obs.radius);
+                    ctx.lineTo(obs.radius, obs.radius*0.4);
+                    ctx.lineTo(-obs.radius*0.2, obs.radius);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                } else {
+                    // 人工衛星
+                    ctx.shadowBlur = 6;
+                    ctx.shadowColor = "#00ff66";
+                    ctx.fillStyle = "#0055ff";
+                    ctx.fillRect(-obs.radius, -obs.radius*0.2, obs.radius*2, obs.radius*0.4);
+                    ctx.fillStyle = "#e0e0e0";
+                    ctx.beginPath();
+                    ctx.arc(0, 0, obs.radius*0.4, 0, Math.PI*2);
+                    ctx.fill();
+                    ctx.strokeStyle = "#00ff66";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(0,0); ctx.lineTo(0, -obs.radius*0.7);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+                ctx.restore();
+            });
+
+            // 5. プレイヤー（宇宙船）の描画
+            let renderPlayer = true;
+            if (invincibleTimer > 0) {
+                renderPlayer = Math.floor(timestamp / 100) % 2 === 0;
+            }
+
+            if (renderPlayer) {
+                if (playerImg) {
+                    const size = CONFIG.player.radius * 2.2;
+                    ctx.drawImage(playerImg, CONFIG.player.startX - CONFIG.player.radius, playerY - CONFIG.player.radius, size, size);
+                } else {
+                    ctx.save();
+                    ctx.translate(CONFIG.player.startX, playerY);
+
+                    // 後方プラズマテイル
+                    const tailGrad = ctx.createLinearGradient(-CONFIG.player.radius, 0, -CONFIG.player.radius * 3, 0);
+                    tailGrad.addColorStop(0, "rgba(0, 240, 255, 0.8)");
+                    tailGrad.addColorStop(0.3, "rgba(255, 0, 128, 0.5)");
+                    tailGrad.addColorStop(1, "transparent");
+                    ctx.fillStyle = tailGrad;
+                    ctx.beginPath();
+                    ctx.moveTo(-CONFIG.player.radius*0.5, -CONFIG.player.radius*0.4);
+                    ctx.lineTo(-CONFIG.player.radius * 3 - (Math.random()*10), 0);
+                    ctx.lineTo(-CONFIG.player.radius*0.5, CONFIG.player.radius*0.4);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // 宇宙船本体
+                    ctx.fillStyle = "#ffffff";
+                    ctx.strokeStyle = invincibleTimer > 0 ? "#ff4d4d" : "#00f0ff"; 
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = "#00f0ff";
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(CONFIG.player.radius * 1.2, 0);
+                    ctx.lineTo(-CONFIG.player.radius * 0.7, -CONFIG.player.radius);
+                    ctx.lineTo(-CONFIG.player.radius * 0.3, -CONFIG.player.radius * 0.3);
+                    ctx.lineTo(-CONFIG.player.radius * 0.3, CONFIG.player.radius * 0.3);
+                    ctx.lineTo(-CONFIG.player.radius * 0.7, CONFIG.player.radius);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.restore();
+                    ctx.shadowBlur = 0;
+                }
+            }
+
+            // 6. プレイ中のUI表示
+            if (gameState === 'PLAYING') {
+                ctx.fillStyle = "#00f0ff";
+                ctx.font = "bold 20px 'Courier New', Courier, sans-serif";
+                ctx.textAlign = "left";
+                ctx.shadowBlur = 4;
+                ctx.shadowColor = "#00f0ff";
+
+                ctx.fillText(`DIST: ${Math.floor(playTime * 10)} LY`, 25, 40);
+                ctx.fillText(`KILLS: ${killCount}`, 240, 40);
+                
+                let lifeStr = "SHIELD: ";
+                for(let l = 0; l < lives; l++) lifeStr += "▰";
+                for(let l = lives; l < CONFIG.player.maxLives; l++) lifeStr += "▱";
+                ctx.fillStyle = invincibleTimer > 0 ? "#ff4d4d" : "#00ff66";
+                ctx.fillText(lifeStr, 440, 40);
+
+                ctx.shadowBlur = 0;
+            }
+
+            ctx.restore();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

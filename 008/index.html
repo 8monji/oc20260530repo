@@ -1,1 +1,571 @@
-none 008
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HTML5 Canvas Runner</title>
+    <style>
+        /* ================= CSS ================= */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: sans-serif;
+            overflow: hidden;
+            /* スクロール防止 */
+            touch-action: none;
+            /* ズーム・スクロール等のデフォルト動作防止 */
+        }
+
+        #game-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            position: absolute;
+            /* JSでサイズと位置(センタリング)を計算して付与します */
+            background: #222;
+        }
+
+        /* UIオーバーレイ */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+            /* 下のCanvasにタッチを貫通させる */
+        }
+
+        .ui-panel {
+            background: rgba(0, 0, 0, 0.75);
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            pointer-events: auto;
+            /* パネル上のボタン等は押せるようにする */
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #0df;
+            text-shadow: 0 0 10px #0df;
+        }
+
+        h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+            background: #e63946;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+            transition: transform 0.1s, background 0.2s;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .small-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            background: #457b9d;
+            margin-top: 5px;
+        }
+
+        .config-area {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #555;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .config-area label {
+            display: block;
+            margin: 8px 0;
+        }
+
+        /* フルスクリーンボタン */
+        #btn-fullscreen {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            padding: 10px;
+            font-size: 14px;
+            pointer-events: auto;
+            display: none;
+            /* JSで対応チェック後に表示 */
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* 縦画面警告 (CSSメディアクエリとJSの両方で制御) */
+        #orientation-warning {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            color: #fff;
+            z-index: 999;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        @media (orientation: portrait) {
+            #orientation-warning {
+                display: flex;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="game-container">
+        <canvas id="game-canvas"></canvas>
+
+        <button id="btn-fullscreen">FULL SCREEN</button>
+
+        <div id="ui-title" class="ui-layer">
+            <div class="ui-panel">
+                <h1>CUBE RUNNER</h1>
+                <p>上下にドラッグして障害物を避けろ！</p>
+                <button id="btn-play">PLAY</button>
+
+                <div class="config-area">
+                    <p>【画像カスタマイズ】</p>
+                    <label>プレイヤー: <input type="file" id="input-player-img" accept="image/*"></label>
+                    <label>背景: <input type="file" id="input-bg-img" accept="image/*"></label>
+                    <button id="btn-reset-img" class="small-btn">画像をリセット</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="ui-gameover" class="ui-layer" style="display: none;">
+            <div class="ui-panel">
+                <h2 style="color: #e63946;">GAME OVER</h2>
+                <p id="score-text">Survival Time: 0.00s</p>
+                <button id="btn-retry">RETRY</button>
+                <button id="btn-back" class="small-btn">TITLE</button>
+            </div>
+        </div>
+
+        <div id="ui-pause" class="ui-layer" style="display: none;">
+            <div class="ui-panel">
+                <h2>PAUSED</h2>
+            </div>
+        </div>
+    </div>
+
+    <div id="orientation-warning">
+        <p>端末を横向きにしてください</p>
+        <p>(Please rotate your device)</p>
+    </div>
+
+    <script>
+        /* ================= CONFIG ================= */
+        const CONFIG = {
+            worldW: 960,
+            worldH: 540,
+            playerSize: 40,
+            playerColor: '#0df',
+            playerFollowSpeed: 15, // 追従速度(大きいほど速い)
+            baseObstacleSpeed: 400, // ピクセル/秒
+            spawnIntervalMin: 0.6,  // 秒
+            spawnIntervalMax: 1.5,  // 秒
+            obstacleMinH: 40,
+            obstacleMaxH: 200,
+            obstacleW: 40,
+            obstacleColor: '#e63946'
+        };
+
+        /* ================= STATE ================= */
+        let state = {
+            mode: 'title', // 'title', 'playing', 'gameover', 'pause'
+            time: 0,
+            score: 0,
+            player: { x: 100, y: CONFIG.worldH / 2, targetY: CONFIG.worldH / 2 },
+            obstacles: [],
+            spawnTimer: 0,
+            nextSpawnTime: 1,
+            speedMultiplier: 1,
+            isDragging: false
+        };
+
+        let scale = 1, offsetX = 0, offsetY = 0;
+        let lastTime = 0;
+        let animationFrameId;
+
+        // カスタム画像保持用
+        const assets = {
+            player: null,
+            bg: null
+        };
+
+        /* ================= DOM Elements ================= */
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const uiTitle = document.getElementById('ui-title');
+        const uiGameover = document.getElementById('ui-gameover');
+        const uiPause = document.getElementById('ui-pause');
+        const scoreText = document.getElementById('score-text');
+
+        const btnPlay = document.getElementById('btn-play');
+        const btnRetry = document.getElementById('btn-retry');
+        const btnBack = document.getElementById('btn-back');
+        const btnFullscreen = document.getElementById('btn-fullscreen');
+
+        const inputPlayerImg = document.getElementById('input-player-img');
+        const inputBgImg = document.getElementById('input-bg-img');
+        const btnResetImg = document.getElementById('btn-reset-img');
+        const orientationWarning = document.getElementById('orientation-warning');
+
+        /* ================= INITIALIZATION ================= */
+        function init() {
+            // 解像度固定（内部サイズ）
+            canvas.width = CONFIG.worldW;
+            canvas.height = CONFIG.worldH;
+
+            loadImagesFromStorage();
+            setupEvents();
+            resize();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* ================= EVENTS & RESIZE ================= */
+        function setupEvents() {
+            window.addEventListener('resize', resize);
+            window.addEventListener('orientationchange', resize);
+
+            // フルスクリーン判定
+            if (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen) {
+                btnFullscreen.style.display = 'block';
+                btnFullscreen.addEventListener('click', toggleFullScreen);
+            }
+
+            // Pointer Events (ドラッグ操作)
+            canvas.addEventListener('pointerdown', (e) => {
+                if (state.mode !== 'playing') return;
+                state.isDragging = true;
+                updateTargetY(e.clientY);
+            });
+            window.addEventListener('pointermove', (e) => {
+                if (state.mode !== 'playing' || !state.isDragging) return;
+                updateTargetY(e.clientY);
+            });
+            window.addEventListener('pointerup', () => state.isDragging = false);
+            window.addEventListener('pointercancel', () => state.isDragging = false);
+
+            // UI Buttons
+            btnPlay.addEventListener('click', startGame);
+            btnRetry.addEventListener('click', startGame);
+            btnBack.addEventListener('click', () => setMode('title'));
+
+            // 画像選択イベント
+            inputPlayerImg.addEventListener('change', (e) => handleImageUpload(e, 'runner_player_img', 'player'));
+            inputBgImg.addEventListener('change', (e) => handleImageUpload(e, 'runner_bg_img', 'bg'));
+            btnResetImg.addEventListener('click', resetImages);
+
+            // デフォルトの挙動防止(スクロール等)
+            document.body.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        }
+
+        function resize() {
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+
+            // 縦画面チェック
+            const isPortrait = winH > winW;
+            if (isPortrait) {
+                if (state.mode === 'playing') setMode('pause');
+                return; // CSSメディアクエリで警告が出るため何もしない
+            } else {
+                if (state.mode === 'pause') setMode('playing');
+            }
+
+            // アスペクト比を維持して拡大縮小 (レターボックス)
+            const aspectWin = winW / winH;
+            const aspectWorld = CONFIG.worldW / CONFIG.worldH;
+
+            if (aspectWin > aspectWorld) {
+                scale = winH / CONFIG.worldH;
+            } else {
+                scale = winW / CONFIG.worldW;
+            }
+
+            const displayW = CONFIG.worldW * scale;
+            const displayH = CONFIG.worldH * scale;
+
+            canvas.style.width = `${displayW}px`;
+            canvas.style.height = `${displayH}px`;
+
+            offsetX = (winW - displayW) / 2;
+            offsetY = (winH - displayH) / 2;
+
+            canvas.style.left = `${offsetX}px`;
+            canvas.style.top = `${offsetY}px`;
+        }
+
+        function screenToWorld(clientY) {
+            return (clientY - offsetY) / scale;
+        }
+
+        function updateTargetY(clientY) {
+            let worldY = screenToWorld(clientY);
+            // 上下のはみ出し防止
+            const halfSize = CONFIG.playerSize / 2;
+            state.player.targetY = Math.max(halfSize, Math.min(CONFIG.worldH - halfSize, worldY));
+        }
+
+        /* ================= GAME LOGIC ================= */
+        function setMode(newMode) {
+            state.mode = newMode;
+            uiTitle.style.display = newMode === 'title' ? 'flex' : 'none';
+            uiGameover.style.display = newMode === 'gameover' ? 'flex' : 'none';
+            uiPause.style.display = newMode === 'pause' ? 'flex' : 'none';
+            btnFullscreen.style.display = (newMode === 'title' && (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) ? 'block' : 'none';
+        }
+
+        function startGame() {
+            state.score = 0;
+            state.player.y = CONFIG.worldH / 2;
+            state.player.targetY = CONFIG.worldH / 2;
+            state.obstacles = [];
+            state.spawnTimer = 0;
+            state.speedMultiplier = 1;
+            state.isDragging = false;
+            lastTime = performance.now();
+            setMode('playing');
+        }
+
+        function gameOver() {
+            scoreText.innerText = `Survival Time: ${state.score.toFixed(2)}s`;
+            setMode('gameover');
+        }
+
+        function update(dt) {
+            if (state.mode !== 'playing') return;
+
+            // タイム/スコア更新
+            state.time += dt;
+            state.score += dt;
+
+            // 難易度上昇（時間経過で速度UP）
+            state.speedMultiplier = 1 + (state.score * 0.02);
+
+            // プレイヤー移動（目標位置へ線形補間）
+            const dy = state.player.targetY - state.player.y;
+            state.player.y += dy * Math.min(CONFIG.playerFollowSpeed * dt, 1);
+
+            // 障害物スポーン
+            state.spawnTimer += dt;
+            if (state.spawnTimer >= state.nextSpawnTime) {
+                spawnObstacle();
+                state.spawnTimer = 0;
+                const range = CONFIG.spawnIntervalMax - CONFIG.spawnIntervalMin;
+                // 速度が上がると出現間隔も少し短く
+                const speedFactor = Math.max(0.5, 1 / state.speedMultiplier);
+                state.nextSpawnTime = (CONFIG.spawnIntervalMin + Math.random() * range) * speedFactor;
+            }
+
+            // 障害物移動と当たり判定
+            const pSize = CONFIG.playerSize;
+            const pLeft = state.player.x - pSize / 2;
+            const pRight = state.player.x + pSize / 2;
+            const pTop = state.player.y - pSize / 2;
+            const pBottom = state.player.y + pSize / 2;
+            // 当たり判定を少し小さくして遊びを持たせる(ヒットボックス調整)
+            const hitMargin = 5;
+
+            for (let i = state.obstacles.length - 1; i >= 0; i--) {
+                let obs = state.obstacles[i];
+                obs.x -= CONFIG.baseObstacleSpeed * state.speedMultiplier * dt;
+
+                // 画面外削除
+                if (obs.x + obs.w < 0) {
+                    state.obstacles.splice(i, 1);
+                    continue;
+                }
+
+                // AABB当たり判定
+                if (pRight - hitMargin > obs.x && pLeft + hitMargin < obs.x + obs.w &&
+                    pBottom - hitMargin > obs.y && pTop + hitMargin < obs.y + obs.h) {
+                    gameOver();
+                }
+            }
+        }
+
+        function spawnObstacle() {
+            const h = CONFIG.obstacleMinH + Math.random() * (CONFIG.obstacleMaxH - CONFIG.obstacleMinH);
+            const y = Math.random() * (CONFIG.worldH - h); // 上下ランダム
+            state.obstacles.push({
+                x: CONFIG.worldW,
+                y: y,
+                w: CONFIG.obstacleW,
+                h: h
+            });
+        }
+
+        /* ================= RENDERING ================= */
+        function draw() {
+            // 背景クリア
+            if (assets.bg) {
+                ctx.drawImage(assets.bg, 0, 0, CONFIG.worldW, CONFIG.worldH);
+            } else {
+                // デフォルト背景 (グラデーション)
+                const grad = ctx.createLinearGradient(0, 0, CONFIG.worldW, 0);
+                grad.addColorStop(0, '#112');
+                grad.addColorStop(1, '#224');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+
+                // 流れるグリッド演出
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+                ctx.lineWidth = 2;
+                const offset = (state.mode === 'playing' ? state.time * 200 : 0) % 100;
+                for (let i = -100; i < CONFIG.worldW; i += 100) {
+                    ctx.beginPath();
+                    ctx.moveTo(i - offset, 0);
+                    ctx.lineTo(i - offset, CONFIG.worldH);
+                    ctx.stroke();
+                }
+            }
+
+            // 障害物描画
+            ctx.fillStyle = CONFIG.obstacleColor;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = CONFIG.obstacleColor;
+            for (let obs of state.obstacles) {
+                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+            }
+            ctx.shadowBlur = 0; // リセット
+
+            // プレイヤー描画
+            const pSize = CONFIG.playerSize;
+            if (assets.player) {
+                ctx.drawImage(assets.player, state.player.x - pSize / 2, state.player.y - pSize / 2, pSize, pSize);
+            } else {
+                ctx.fillStyle = CONFIG.playerColor;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = CONFIG.playerColor;
+                ctx.fillRect(state.player.x - pSize / 2, state.player.y - pSize / 2, pSize, pSize);
+                ctx.shadowBlur = 0;
+            }
+
+            // UI（スコア描画）
+            if (state.mode === 'playing') {
+                ctx.fillStyle = '#fff';
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'right';
+                ctx.fillText(`TIME: ${state.score.toFixed(1)}s`, CONFIG.worldW - 20, 40);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            let dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+
+            // タブ切り替え等による異常なdtの跳ね上がりを防止
+            if (dt > 0.1) dt = 0.1;
+
+            update(dt);
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        /* ================= CUSTOMIZATION (IMAGE) ================= */
+        function loadImagesFromStorage() {
+            const pData = localStorage.getItem('runner_player_img');
+            const bgData = localStorage.getItem('runner_bg_img');
+            if (pData) {
+                let img = new Image();
+                img.onload = () => assets.player = img;
+                img.src = pData;
+            }
+            if (bgData) {
+                let img = new Image();
+                img.onload = () => assets.bg = img;
+                img.src = bgData;
+            }
+        }
+
+        function handleImageUpload(event, storageKey, assetKey) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const dataUrl = e.target.result;
+                localStorage.setItem(storageKey, dataUrl);
+                let img = new Image();
+                img.onload = () => assets[assetKey] = img;
+                img.src = dataUrl;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function resetImages() {
+            localStorage.removeItem('runner_player_img');
+            localStorage.removeItem('runner_bg_img');
+            assets.player = null;
+            assets.bg = null;
+            inputPlayerImg.value = '';
+            inputBgImg.value = '';
+            alert("画像を初期化しました。");
+        }
+
+        /* ================= FULLSCREEN ================= */
+        function toggleFullScreen() {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+            const requestFullScreen = docEl.requestFullscreen || docEl.webkitRequestFullScreen;
+            const cancelFullScreen = doc.exitFullscreen || doc.webkitExitFullscreen;
+
+            if (!doc.fullscreenElement && !doc.webkitFullscreenElement) {
+                requestFullScreen.call(docEl);
+            } else {
+                cancelFullScreen.call(doc);
+            }
+        }
+
+        // 起動
+        init();
+    </script>
+</body>
+
+</html>

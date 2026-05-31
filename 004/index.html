@@ -1,1 +1,654 @@
-none 004
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PIXEL DODGE</title>
+<style>
+    :root {
+        --bg-color: #050510;
+        --text-color: #0ff;
+        --accent-color: #0f0;
+        --danger-color: #f0f;
+        --font-retro: 'Courier New', Courier, monospace;
+    }
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none; /* スクロール・ズーム防止 */
+    }
+    body, html {
+        width: 100%;
+        height: 100%;
+        background-color: #000;
+        color: var(--text-color);
+        font-family: var(--font-retro);
+        font-weight: bold;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    /* ゲームコンテナ */
+    #gameContainer {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: var(--bg-color);
+    }
+    /* スキャンライン（ブラウン管エフェクト） */
+    #gameContainer::after {
+        content: " ";
+        display: block;
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+        background-size: 100% 4px, 3px 100%;
+        pointer-events: none; /* クリック等を通す */
+        z-index: 20;
+    }
+    canvas {
+        background-color: var(--bg-color);
+        image-rendering: pixelated; /* ドット絵をくっきり表示 */
+    }
+    /* UIオーバーレイ共通 */
+    .overlay {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 10;
+        transition: opacity 0.3s;
+    }
+    .hidden {
+        display: none !important;
+    }
+    h1 {
+        font-size: 3.5rem;
+        color: var(--accent-color);
+        text-shadow: 2px 2px 0px #000, 4px 4px 0px #055;
+        margin-bottom: 10px;
+        text-align: center;
+        letter-spacing: 5px;
+    }
+    h2 {
+        font-size: 2.5rem;
+        color: var(--danger-color);
+        text-shadow: 2px 2px 0px #000;
+        margin-bottom: 10px;
+        letter-spacing: 2px;
+    }
+    p { margin-bottom: 20px; font-size: 1.5rem; text-shadow: 1px 1px 0px #000; }
+    
+    .controls-info {
+        color: #fff;
+        font-size: 1.2rem;
+        margin-bottom: 20px;
+        text-align: center;
+        line-height: 1.5;
+    }
+    
+    .btn {
+        background: #000;
+        color: var(--accent-color);
+        border: 4px solid var(--accent-color);
+        padding: 10px 30px;
+        font-size: 1.5rem;
+        font-family: var(--font-retro);
+        font-weight: bold;
+        cursor: pointer;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+        box-shadow: 4px 4px 0px var(--accent-color);
+    }
+    .btn:active {
+        box-shadow: 0px 0px 0px var(--accent-color);
+        transform: translate(4px, 4px);
+    }
+    
+    .fs-btn {
+        position: absolute;
+        top: 10px; right: 10px;
+        padding: 5px 10px;
+        font-size: 1rem;
+        z-index: 30;
+        border-width: 2px;
+        box-shadow: 2px 2px 0px var(--accent-color);
+    }
+    
+    /* 画像カスタマイズエリア */
+    .custom-area {
+        background: rgba(0, 255, 255, 0.1);
+        border: 2px dashed var(--text-color);
+        padding: 15px;
+        text-align: center;
+        margin-top: 10px;
+    }
+    .custom-area label {
+        display: block;
+        margin: 10px 0;
+        font-size: 1rem;
+    }
+    .custom-area input[type="file"] { display: none; }
+    
+    .sm-btn {
+        background: #000; color: var(--text-color); 
+        border: 2px solid var(--text-color);
+        padding: 5px 10px; font-family: var(--font-retro); font-size: 0.9rem; 
+        cursor: pointer; margin-left: 10px;
+    }
+    .sm-btn:active { background: var(--text-color); color: #000; }
+
+    /* 縦画面警告 */
+    #portraitOverlay {
+        background: var(--danger-color);
+        color: #fff;
+        z-index: 100;
+    }
+    #portraitOverlay h2 { color: #fff; text-shadow: none; }
+</style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+    
+    <button id="btnFullscreen" class="btn fs-btn hidden">FULL SCR</button>
+
+    <div id="uiTitle" class="overlay">
+        <h1>PIXEL DODGE</h1>
+        <div class="controls-info">
+            [ DRAG: MOVE ]<br>
+            [ TAP: SHOOT ]
+        </div>
+        <button id="btnPlay" class="btn">PLAY</button>
+        
+        <div class="custom-area">
+            <p style="font-size: 1rem; margin-bottom:10px; color:#fff;">[ CUSTM IMG ]</p>
+            <label>
+                PLYR: 
+                <button class="sm-btn" onclick="document.getElementById('filePlayer').click()">SEL</button>
+                <input type="file" id="filePlayer" accept="image/*">
+            </label>
+            <label>
+                BACK: 
+                <button class="sm-btn" onclick="document.getElementById('fileBg').click()">SEL</button>
+                <input type="file" id="fileBg" accept="image/*">
+            </label>
+            <button id="btnResetImg" class="sm-btn" style="margin-top:10px; border-color:#f0f; color:#f0f;">RSET</button>
+        </div>
+    </div>
+
+    <div id="uiGameover" class="overlay hidden">
+        <h2>GAME OVER</h2>
+        <p>TIME: <span id="scoreText">0.00</span>s | KILLS: <span id="killsText">0</span></p>
+        <button id="btnRetry" class="btn">RETRY</button>
+    </div>
+
+    <div id="portraitOverlay" class="overlay hidden">
+        <h2>TURN DEVICE</h2>
+        <p>横画面専用</p>
+    </div>
+</div>
+
+<script>
+/** =========================================
+ * CONFIG & STATE
+ * ========================================= */
+const CONFIG = {
+    worldW: 960,
+    worldH: 540,
+    playerW: 40,
+    playerH: 40,
+    bulletW: 24,
+    bulletH: 8,
+    bulletSpeed: 1000,
+    baseSpeed: 400,       
+    speedAccel: 15,       
+    spawnInterval: 0.7,   
+    playerColor: '#0f0',
+    bulletColor: '#ff0',
+    starCount: 60         
+};
+
+const STATE = { TITLE: 0, PLAYING: 1, GAMEOVER: 2 };
+let currentState = STATE.TITLE;
+
+// DOM Elements
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const uiTitle = document.getElementById('uiTitle');
+const uiGameover = document.getElementById('uiGameover');
+const portraitOverlay = document.getElementById('portraitOverlay');
+const scoreText = document.getElementById('scoreText');
+const killsText = document.getElementById('killsText');
+const btnFullscreen = document.getElementById('btnFullscreen');
+
+// Game Variables
+let lastTime = performance.now(); // 初期化を安全に
+let score = 0;
+let kills = 0;
+let currentSpeed = CONFIG.baseSpeed;
+let spawnTimer = 0;
+let isPortrait = false;
+let isPaused = false;
+
+let player = { x: 120, y: CONFIG.worldH / 2, w: CONFIG.playerW, h: CONFIG.playerH };
+let obstacles = [];
+let bullets = [];
+let stars = [];
+let bgScrollX = 0;
+
+// Input Variables
+let ptrInput = { startX: 0, startY: 0, isDown: false, time: 0 };
+
+// Custom Images
+let imgPlayer = null;
+let imgBg = null;
+
+/** =========================================
+ * INITIALIZATION & EVENT LISTENERS
+ * ========================================= */
+function init() {
+    canvas.width = CONFIG.worldW;
+    canvas.height = CONFIG.worldH;
+    
+    if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+        btnFullscreen.classList.remove('hidden');
+    }
+
+    for(let i=0; i<CONFIG.starCount; i++) {
+        stars.push({
+            x: Math.random() * CONFIG.worldW,
+            y: Math.random() * CONFIG.worldH,
+            s: Math.random() * 3 + 1, 
+            v: Math.random() * 0.5 + 0.2 
+        });
+    }
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); 
+    
+    document.getElementById('btnPlay').addEventListener('click', startGame);
+    document.getElementById('btnRetry').addEventListener('click', startGame);
+    btnFullscreen.addEventListener('click', toggleFullscreen);
+
+    canvas.addEventListener('pointerdown', handlePointerDown, { passive: false });
+    canvas.addEventListener('pointermove', handlePointerMove, { passive: false });
+    canvas.addEventListener('pointerup', handlePointerUp, { passive: false });
+    canvas.addEventListener('pointercancel', handlePointerUp, { passive: false });
+    canvas.addEventListener('pointerout', handlePointerUp, { passive: false });
+    
+    document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+    document.getElementById('filePlayer').addEventListener('change', (e) => handleFileUpload(e, 'playerImg8bit'));
+    document.getElementById('fileBg').addEventListener('change', (e) => handleFileUpload(e, 'bgImg8bit'));
+    document.getElementById('btnResetImg').addEventListener('click', resetCustomImages);
+
+    loadCustomImages();
+    requestAnimationFrame(gameLoop);
+}
+
+/** =========================================
+ * RESIZE & COORDINATE CONVERSION
+ * ========================================= */
+function handleResize() {
+    const winW = window.innerWidth;
+    const winH = window.innerHeight;
+    
+    isPortrait = winH > winW;
+    if (isPortrait) {
+        portraitOverlay.classList.remove('hidden');
+        if (currentState === STATE.PLAYING) isPaused = true;
+    } else {
+        portraitOverlay.classList.add('hidden');
+        if (currentState === STATE.PLAYING) isPaused = false;
+    }
+
+    const scale = Math.min(winW / CONFIG.worldW, winH / CONFIG.worldH);
+    canvas.style.width = `${CONFIG.worldW * scale}px`;
+    canvas.style.height = `${CONFIG.worldH * scale}px`;
+}
+
+function updatePlayerPos(clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleY = canvas.height / rect.height;
+    let worldY = (clientY - rect.top) * scaleY;
+    player.y = Math.max(player.h / 2, Math.min(CONFIG.worldH - player.h / 2, worldY));
+}
+
+/** =========================================
+ * INPUT HANDLING
+ * ========================================= */
+function handlePointerDown(e) {
+    if (currentState !== STATE.PLAYING || isPaused || isPortrait) return;
+    e.preventDefault(); 
+    
+    ptrInput.startX = e.clientX;
+    ptrInput.startY = e.clientY;
+    ptrInput.isDown = true;
+    ptrInput.time = performance.now();
+    
+    updatePlayerPos(e.clientY);
+}
+
+function handlePointerMove(e) {
+    if (currentState !== STATE.PLAYING || isPaused || isPortrait || !ptrInput.isDown) return;
+    e.preventDefault(); 
+    updatePlayerPos(e.clientY);
+}
+
+function handlePointerUp(e) {
+    if (currentState !== STATE.PLAYING || isPaused || isPortrait || !ptrInput.isDown) return;
+    e.preventDefault(); 
+    ptrInput.isDown = false;
+    
+    let dx = e.clientX - ptrInput.startX;
+    let dy = e.clientY - ptrInput.startY;
+    let dt = performance.now() - ptrInput.time;
+    
+    // タップ判定（移動量が少なく短時間なら射撃）
+    if (Math.abs(dx) < 15 && Math.abs(dy) < 15 && dt < 300) {
+        fireBullet();
+    }
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        const docElm = document.documentElement;
+        if (docElm.requestFullscreen) docElm.requestFullscreen();
+        else if (docElm.webkitRequestFullscreen) docElm.webkitRequestFullscreen();
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+}
+
+/** =========================================
+ * CUSTOM IMAGES
+ * ========================================= */
+function handleFileUpload(e, storageKey) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try {
+            localStorage.setItem(storageKey, ev.target.result);
+            loadCustomImages();
+        } catch(err) {
+            alert("画像サイズが大きすぎます。");
+        }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; 
+}
+
+function loadCustomImages() {
+    try {
+        const pData = localStorage.getItem('playerImg8bit');
+        const bData = localStorage.getItem('bgImg8bit');
+        
+        if (pData) { imgPlayer = new Image(); imgPlayer.src = pData; } else { imgPlayer = null; }
+        if (bData) { imgBg = new Image(); imgBg.src = bData; } else { imgBg = null; }
+    } catch (err) {
+        // ローカル（file://）起動等によるエラーを無視
+        console.warn("Storage access denied. Playing with default visuals.");
+        imgPlayer = null;
+        imgBg = null;
+    }
+}
+
+function resetCustomImages() {
+    try {
+        localStorage.removeItem('playerImg8bit');
+        localStorage.removeItem('bgImg8bit');
+    } catch(err) {}
+    loadCustomImages();
+}
+
+/** =========================================
+ * GAME LOGIC
+ * ========================================= */
+function startGame() {
+    currentState = STATE.PLAYING;
+    uiTitle.classList.add('hidden');
+    uiGameover.classList.add('hidden');
+    
+    score = 0;
+    kills = 0;
+    currentSpeed = CONFIG.baseSpeed;
+    spawnTimer = 0;
+    obstacles = [];
+    bullets = [];
+    player.y = CONFIG.worldH / 2;
+    ptrInput.isDown = false;
+    
+    // play開始時に時間をリセットし、急激なdt発生を防ぐ
+    lastTime = performance.now();
+    isPaused = isPortrait;
+}
+
+function gameOver() {
+    currentState = STATE.GAMEOVER;
+    scoreText.textContent = score.toFixed(2);
+    killsText.textContent = kills;
+    uiGameover.classList.remove('hidden');
+}
+
+function fireBullet() {
+    bullets.push({
+        x: player.x + player.w / 2,
+        y: player.y,
+        w: CONFIG.bulletW,
+        h: CONFIG.bulletH
+    });
+}
+
+function update(dt) {
+    if (currentState !== STATE.PLAYING || isPaused) return;
+
+    score += dt;
+    currentSpeed += CONFIG.speedAccel * dt;
+    
+    if (imgBg) {
+        bgScrollX -= (currentSpeed * 0.3) * dt;
+        if (bgScrollX <= -CONFIG.worldW) bgScrollX = 0;
+    } else {
+        stars.forEach(star => {
+            star.x -= currentSpeed * star.v * dt;
+            if (star.x < 0) {
+                star.x = CONFIG.worldW;
+                star.y = Math.random() * CONFIG.worldH;
+            }
+        });
+    }
+
+    spawnTimer += dt;
+    if (spawnTimer >= CONFIG.spawnInterval) {
+        spawnTimer = 0;
+        spawnObstacle();
+    }
+
+    let px = player.x - player.w / 2;
+    let py = player.y - player.h / 2;
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += CONFIG.bulletSpeed * dt;
+        
+        if (b.x > CONFIG.worldW) {
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        let bulletHit = false;
+        let bx = b.x - b.w / 2;
+        let by = b.y - b.h / 2;
+
+        for (let j = obstacles.length - 1; j >= 0; j--) {
+            let obs = obstacles[j];
+            if (bx < obs.x + obs.w &&
+                bx + b.w > obs.x &&
+                by < obs.y + obs.h &&
+                by + b.h > obs.y) {
+                
+                obstacles.splice(j, 1);
+                bulletHit = true;
+                kills++;
+                break; 
+            }
+        }
+
+        if (bulletHit) {
+            bullets.splice(i, 1);
+        }
+    }
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= currentSpeed * dt;
+        
+        if (obs.x + obs.w < 0) {
+            obstacles.splice(i, 1);
+            continue;
+        }
+
+        if (px < obs.x + obs.w &&
+            px + player.w > obs.x &&
+            py < obs.y + obs.h &&
+            py + player.h > obs.y) {
+            gameOver();
+        }
+    }
+}
+
+function spawnObstacle() {
+    const type = Math.floor(Math.random() * 3); 
+    let w, h, c;
+    let y = Math.random() * CONFIG.worldH;
+    
+    if (type === 0) {
+        w = 40; h = 40; c = '#ff0055'; 
+    } else if (type === 1) {
+        w = 50; h = 40; c = '#ffff00'; 
+    } else {
+        w = 30; h = Math.random() * 100 + 150; c = '#f0f'; 
+    }
+    
+    y = Math.max(0, Math.min(y, CONFIG.worldH - h));
+    obstacles.push({ x: CONFIG.worldW, y: y, w: w, h: h, type: type, color: c });
+}
+
+/** =========================================
+ * RENDERING
+ * ========================================= */
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (imgBg && imgBg.complete) {
+        ctx.drawImage(imgBg, bgScrollX, 0, CONFIG.worldW, CONFIG.worldH);
+        ctx.drawImage(imgBg, bgScrollX + CONFIG.worldW, 0, CONFIG.worldW, CONFIG.worldH);
+    } else {
+        ctx.fillStyle = '#fff';
+        stars.forEach(star => {
+            ctx.globalAlpha = star.v; 
+            ctx.fillRect(star.x, star.y, star.s, star.s);
+        });
+        ctx.globalAlpha = 1.0;
+    }
+
+    ctx.fillStyle = CONFIG.bulletColor;
+    bullets.forEach(b => {
+        ctx.fillRect(b.x - b.w/2, b.y - b.h/2, b.w, b.h);
+    });
+
+    obstacles.forEach(obs => {
+        if (obs.type === 0) {
+            ctx.fillStyle = obs.color;
+            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(obs.x + 8, obs.y + 8, obs.w - 16, obs.h - 16);
+        } else if (obs.type === 1) {
+            ctx.fillStyle = obs.color;
+            ctx.beginPath();
+            ctx.moveTo(obs.x + obs.w, obs.y);
+            ctx.lineTo(obs.x, obs.y + obs.h / 2);
+            ctx.lineTo(obs.x + obs.w, obs.y + obs.h);
+            ctx.fill();
+        } else if (obs.type === 2) {
+            let alpha = 0.6 + Math.sin(score * 15) * 0.4;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = obs.color;
+            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(obs.x + obs.w/3, obs.y, obs.w/3, obs.h); 
+        }
+    });
+
+    if (imgPlayer && imgPlayer.complete) {
+        ctx.drawImage(imgPlayer, player.x - player.w/2, player.y - player.h/2, player.w, player.h);
+    } else {
+        const s = player.w / 4;
+        ctx.fillStyle = CONFIG.playerColor;
+        ctx.fillRect(player.x - s*1.5, player.y - s*1.5, s*3, s*3); 
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(player.x, player.y - s*0.5, s*2, s); 
+        
+        if (currentState === STATE.PLAYING && !isPaused && Math.floor(score * 20) % 2 === 0) {
+            ctx.fillStyle = '#f00';
+            ctx.fillRect(player.x - s*2.5, player.y - s*0.5, s, s);
+        }
+    }
+
+    if (currentState === STATE.PLAYING) {
+        ctx.fillStyle = '#0ff';
+        ctx.font = '20px "Courier New", monospace';
+        ctx.fillText(`TIME: ${score.toFixed(1)}s  KILLS: ${kills}`, 20, 40);
+        
+        if (isPaused) {
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+            ctx.fillStyle = '#f0f';
+            ctx.font = 'bold 40px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('PAUSED', CONFIG.worldW/2, CONFIG.worldH/2);
+            ctx.textAlign = 'left';
+        }
+    }
+}
+
+/** =========================================
+ * GAME LOOP
+ * ========================================= */
+function gameLoop(timestamp) {
+    let dt = (timestamp - lastTime) / 1000;
+    
+    // dtの異常値（負の値や極端なコマ落ち）を防止
+    if (dt < 0) dt = 0;
+    if (dt > 0.1) dt = 0.1;
+    
+    lastTime = timestamp;
+
+    update(dt);
+    draw();
+
+    requestAnimationFrame(gameLoop);
+}
+
+// 起動
+init();
+</script>
+
+</body>
+</html>

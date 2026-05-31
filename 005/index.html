@@ -1,1 +1,824 @@
-none 005
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AQUA DODGE</title>
+    <style>
+        /* CSSリセットと海中テーマ設定 */
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #001a33;
+            overflow: hidden;
+            touch-action: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* キャンバス */
+        #gameCanvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* UIコンテナ */
+        #uiContainer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* スクリーン共通 */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 30, 60, 0.8);
+            color: #e6ffff;
+            pointer-events: auto;
+            transition: opacity 0.3s;
+        }
+        .hidden {
+            display: none !important;
+        }
+
+        /* テキスト・ボタン装飾 */
+        h1 {
+            font-size: 64px;
+            margin: 0 0 10px 0;
+            color: #00ffff;
+            text-shadow: 0 4px 10px rgba(0, 255, 255, 0.6), 2px 2px 0 #006699;
+            text-align: center;
+            letter-spacing: 4px;
+        }
+        .instruction {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #fff;
+            background: rgba(0,0,0,0.4);
+            padding: 8px 16px;
+            border-radius: 20px;
+        }
+        h2 {
+            font-size: 40px;
+            margin: 0 0 10px 0;
+            color: #80e5ff;
+            text-shadow: 2px 2px 0 #004d66;
+        }
+        p {
+            font-size: 24px;
+            margin: 0 0 15px 0;
+            font-weight: bold;
+        }
+        button {
+            padding: 15px 35px;
+            font-size: 22px;
+            font-weight: bold;
+            color: #fff;
+            background: #0088cc;
+            border: 2px solid #00ffff;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            transition: transform 0.1s, background 0.2s;
+            font-family: inherit;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        button:hover {
+            background: #00aaff;
+        }
+
+        /* 画像変更セクション */
+        .custom-img-sec {
+            margin-top: 25px;
+            padding: 15px 25px;
+            background: rgba(0, 102, 153, 0.5);
+            color: #fff;
+            border: 2px solid #00aaff;
+            border-radius: 12px;
+            font-size: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .custom-img-sec label {
+            display: flex;
+            justify-content: space-between;
+            width: 260px;
+            align-items: center;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 10px;
+            border-radius: 6px;
+        }
+        .custom-img-sec input[type="file"] {
+            width: 180px;
+            font-size: 12px;
+            color: #fff;
+        }
+        #btnResetImg {
+            padding: 8px 16px;
+            font-size: 14px;
+            background: #004d80;
+            border: 1px solid #0088cc;
+            margin: 5px 0 0 0;
+        }
+
+        /* 縦画面警告専用 */
+        #portraitOverlay {
+            background: #001a33;
+            color: #00ffff;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="uiContainer">
+        <div id="titleScreen" class="screen">
+            <h1>AQUA DODGE</h1>
+            <div class="instruction">👈 左側ドラッグ: 移動 ｜ 👉 右側タップ: ショット</div>
+            <div style="display: flex; gap: 15px;">
+                <button id="btnPlay">DIVE IN</button>
+                <button id="btnFullscreen">FULL SCREEN</button>
+            </div>
+            
+            <div class="custom-img-sec">
+                <span>🐟 オリジナル画像に変更 🌊</span>
+                <label>Player: <input type="file" id="inFilePlayer" accept="image/*"></label>
+                <label>BG: <input type="file" id="inFileBg" accept="image/*"></label>
+                <button id="btnResetImg">デフォルトに戻す</button>
+            </div>
+        </div>
+
+        <div id="gameOverScreen" class="screen hidden">
+            <h2>GAME OVER</h2>
+            <p>TIME: <span id="scoreText">0.0</span> s</p>
+            <p>KILLS: <span id="killsText">0</span></p>
+            <button id="btnRetry">RETRY</button>
+        </div>
+
+        <div id="portraitOverlay" class="screen hidden">
+            <h2>スマホを横にしてね！</h2>
+            <p>画面を回転させると海の世界が広がります</p>
+        </div>
+    </div>
+
+<script>
+/**
+ * 冒頭 CONFIG (ゲーム設定)
+ */
+const CONFIG = {
+    worldW: 960,
+    worldH: 540,
+    baseSpeed: 300,       // 水流（スクロール）の基本速度
+    spawnInterval: 1.3,   // 障害物の出現間隔 (秒)
+    safeMarginY: 30       // 画面上下の移動限界マージン
+};
+
+/**
+ * 状態・データ
+ */
+let gameState = 'TITLE'; 
+let prePauseState = 'TITLE'; 
+let timeAlive = 0;
+let kills = 0;
+let lastTime = 0;
+let reqId = null;
+
+// ビューポート計算用
+let scale = 1;
+let offsetX = 0;
+let offsetY = 0;
+
+// エンティティ
+let player = {
+    x: 120,
+    y: CONFIG.worldH / 2,
+    w: 60,
+    h: 40,
+    dragOffsetY: 0
+};
+let obstacles = [];
+let bullets = [];
+let obstacleTimer = 0;
+
+// カスタム画像
+const customImages = {
+    player: null,
+    bg: null
+};
+
+// 泡（背景エフェクト）
+const bubbles = [];
+for (let i = 0; i < 40; i++) {
+    bubbles.push({
+        x: Math.random() * CONFIG.worldW,
+        y: Math.random() * CONFIG.worldH,
+        r: 2 + Math.random() * 6,
+        speed: 30 + Math.random() * 80,
+        phase: Math.random() * Math.PI * 2
+    });
+}
+
+/**
+ * UI要素の参照
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const titleScreen = document.getElementById('titleScreen');
+const gameOverScreen = document.getElementById('gameOverScreen');
+const portraitOverlay = document.getElementById('portraitOverlay');
+const scoreText = document.getElementById('scoreText');
+const killsText = document.getElementById('killsText');
+
+const btnPlay = document.getElementById('btnPlay');
+const btnFullscreen = document.getElementById('btnFullscreen');
+const btnRetry = document.getElementById('btnRetry');
+const btnResetImg = document.getElementById('btnResetImg');
+const inFilePlayer = document.getElementById('inFilePlayer');
+const inFileBg = document.getElementById('inFileBg');
+
+/**
+ * 初期化処理
+ */
+function init() {
+    try {
+        loadCustomImages();
+    } catch (e) {
+        console.warn("Storage access denied");
+    }
+    
+    if (typeof document.fullscreenEnabled === 'undefined' || !document.fullscreenEnabled) {
+        if(btnFullscreen) btnFullscreen.style.display = 'none';
+    }
+
+    window.addEventListener('resize', resizeAndCheckOrientation);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(resizeAndCheckOrientation, 100);
+        setTimeout(resizeAndCheckOrientation, 500);
+    });
+    
+    const handleStart = (e) => {
+        if (e && e.cancelable) e.preventDefault();
+        startGame();
+    };
+
+    btnPlay.addEventListener('click', handleStart);
+    btnPlay.addEventListener('touchstart', handleStart, { passive: false });
+    
+    btnRetry.addEventListener('click', handleStart);
+    btnRetry.addEventListener('touchstart', handleStart, { passive: false });
+    
+    if(btnFullscreen) {
+        btnFullscreen.addEventListener('click', toggleFullScreen);
+    }
+    
+    inFilePlayer.addEventListener('change', (e) => handleImageSelect(e, 'player'));
+    inFileBg.addEventListener('change', (e) => handleImageSelect(e, 'bg'));
+    btnResetImg.addEventListener('click', resetCustomImages);
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+
+    document.body.addEventListener('touchmove', (e) => {
+        if (e.target.tagName !== 'INPUT' && e.cancelable) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    resizeAndCheckOrientation();
+    requestAnimationFrame(loop);
+}
+
+/**
+ * リサイズと画面向きのチェック
+ */
+function resizeAndCheckOrientation() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    scale = Math.min(canvas.width / CONFIG.worldW, canvas.height / CONFIG.worldH);
+    offsetX = (canvas.width - CONFIG.worldW * scale) / 2;
+    offsetY = (canvas.height - CONFIG.worldH * scale) / 2;
+
+    if (window.innerHeight > window.innerWidth) {
+        if (gameState !== 'PAUSED') {
+            prePauseState = gameState;
+            gameState = 'PAUSED';
+            portraitOverlay.classList.remove('hidden');
+        }
+    } else {
+        if (gameState === 'PAUSED') {
+            portraitOverlay.classList.add('hidden');
+            gameState = prePauseState;
+            lastTime = performance.now();
+        }
+    }
+}
+
+/**
+ * ポインタイベント (左右分割操作)
+ */
+let isDragging = false;
+
+function screenToWorldY(clientY) {
+    return (clientY - offsetY) / scale;
+}
+
+function onPointerDown(e) {
+    if (gameState !== 'PLAYING') return;
+
+    // 画面右半分をタップした場合は弾を発射、左半分は移動処理
+    const isRightSide = e.clientX > window.innerWidth / 2;
+    
+    if (isRightSide) {
+        fireBullet();
+        return;
+    }
+
+    // 左半分の処理（移動）
+    const worldY = screenToWorldY(e.clientY);
+    const isHit = (worldY >= player.y - 60 && worldY <= player.y + player.h + 60);
+    
+    if (isHit) {
+        player.dragOffsetY = player.y - worldY;
+    } else {
+        player.dragOffsetY = -player.h / 2;
+    }
+    isDragging = true;
+    updatePlayerPos(worldY);
+}
+
+function onPointerMove(e) {
+    if (!isDragging || gameState !== 'PLAYING') return;
+    updatePlayerPos(screenToWorldY(e.clientY));
+}
+
+function onPointerUp(e) {
+    isDragging = false;
+}
+
+function updatePlayerPos(worldY) {
+    let newY = worldY + player.dragOffsetY;
+    const minY = CONFIG.safeMarginY;
+    const maxY = CONFIG.worldH - player.h - CONFIG.safeMarginY;
+    
+    if (newY < minY) newY = minY;
+    if (newY > maxY) newY = maxY;
+    player.y = newY;
+}
+
+function fireBullet() {
+    bullets.push({
+        x: player.x + player.w,
+        y: player.y + player.h / 2 - 8,
+        w: 24,
+        h: 16,
+        speed: 800 // 水流より速く飛ぶ
+    });
+}
+
+/**
+ * ゲームフロー制御
+ */
+function startGame() {
+    if (gameState === 'PLAYING') return;
+
+    player.y = CONFIG.worldH / 2;
+    obstacles = [];
+    bullets = [];
+    timeAlive = 0;
+    kills = 0;
+    obstacleTimer = 0;
+    isDragging = false;
+
+    titleScreen.classList.add('hidden');
+    gameOverScreen.classList.add('hidden');
+    
+    gameState = 'PLAYING';
+    lastTime = performance.now();
+}
+
+function gameOver() {
+    gameState = 'GAMEOVER';
+    scoreText.innerText = timeAlive.toFixed(2);
+    killsText.innerText = kills;
+    gameOverScreen.classList.remove('hidden');
+}
+
+/**
+ * メインループ
+ */
+function loop(timestamp) {
+    reqId = requestAnimationFrame(loop);
+    if (gameState === 'PAUSED') return;
+
+    let dt = (timestamp - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1;
+    lastTime = timestamp;
+
+    if (gameState === 'PLAYING') update(dt);
+    draw();
+}
+
+/**
+ * 更新ロジック
+ */
+function update(dt) {
+    timeAlive += dt;
+    obstacleTimer += dt;
+
+    const currentSpawnRate = Math.max(0.4, CONFIG.spawnInterval - (timeAlive * 0.02));
+    if (obstacleTimer >= currentSpawnRate) {
+        spawnObstacle();
+        obstacleTimer = 0;
+    }
+
+    const currentSpeed = CONFIG.baseSpeed + (timeAlive * 5);
+
+    // 背景泡の更新
+    bubbles.forEach(b => {
+        b.y -= b.speed * dt;
+        b.x += Math.sin(b.phase + timeAlive * 2) * 0.5;
+        b.x -= currentSpeed * 0.1 * dt;
+        if (b.y < -10) {
+            b.y = CONFIG.worldH + 10;
+            b.x = Math.random() * CONFIG.worldW;
+        }
+        if (b.x < -10) {
+            b.x = CONFIG.worldW + 10;
+        }
+    });
+
+    // 弾の更新と当たり判定
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        let b = bullets[i];
+        b.x += b.speed * dt;
+        
+        if (b.x > CONFIG.worldW) {
+            bullets.splice(i, 1);
+            continue;
+        }
+
+        let hit = false;
+        for (let j = obstacles.length - 1; j >= 0; j--) {
+            let obs = obstacles[j];
+            if (isBulletCollision(b, obs)) {
+                obstacles.splice(j, 1); // 障害物破壊
+                hit = true;
+                kills++;
+                break;
+            }
+        }
+        if (hit) {
+            bullets.splice(i, 1); // 弾も消滅
+        }
+    }
+
+    // 障害物の更新とプレイヤーとの当たり判定
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= currentSpeed * dt;
+        
+        if (obs.type === 0) {
+            obs.yOffset = Math.sin(timeAlive * 3 + obs.phase) * 15;
+        }
+
+        if (obs.x + obs.w < -80) {
+            obstacles.splice(i, 1);
+            continue;
+        }
+
+        if (isPlayerCollision(player, obs)) {
+            gameOver();
+            return;
+        }
+    }
+}
+
+function spawnObstacle() {
+    const minY = CONFIG.safeMarginY;
+    const type = Math.floor(Math.random() * 3);
+    const sizeVar = 0.8 + Math.random() * 0.6;
+    
+    let w, h;
+    if (type === 0) { w = 40; h = 60; }
+    else if (type === 1) { w = 60; h = 60; }
+    else { w = 30; h = 100; }
+    
+    w *= sizeVar; 
+    h *= sizeVar;
+    
+    const maxY = CONFIG.worldH - h - CONFIG.safeMarginY;
+    const randomY = minY + Math.random() * (maxY - minY);
+
+    obstacles.push({
+        type: type,
+        x: CONFIG.worldW + 20,
+        y: randomY,
+        baseY: randomY,
+        yOffset: 0,
+        w: w,
+        h: h,
+        phase: Math.random() * Math.PI * 2
+    });
+}
+
+function isPlayerCollision(a, b) {
+    const marginX = a.w * 0.25;
+    const marginY = a.h * 0.25;
+    const bY = b.yOffset !== undefined ? b.baseY + b.yOffset : b.y;
+
+    return (
+        a.x + marginX < b.x + b.w &&
+        a.x + a.w - marginX > b.x &&
+        a.y + marginY < bY + b.h &&
+        a.y + a.h - marginY > bY
+    );
+}
+
+function isBulletCollision(bullet, obs) {
+    const obsY = obs.yOffset !== undefined ? obs.baseY + obs.yOffset : obs.y;
+    return (
+        bullet.x < obs.x + obs.w &&
+        bullet.x + bullet.w > obs.x &&
+        bullet.y < obsY + obs.h &&
+        bullet.y + bullet.h > obsY
+    );
+}
+
+/**
+ * 描画ロジック
+ */
+function draw() {
+    ctx.fillStyle = '#000814';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
+
+    ctx.beginPath();
+    ctx.rect(0, 0, CONFIG.worldW, CONFIG.worldH);
+    ctx.clip();
+
+    // 背景
+    if (customImages.bg) {
+        ctx.drawImage(customImages.bg, 0, 0, CONFIG.worldW, CONFIG.worldH);
+    } else {
+        const grad = ctx.createLinearGradient(0, 0, 0, CONFIG.worldH);
+        grad.addColorStop(0, '#0088cc');
+        grad.addColorStop(0.5, '#004488');
+        grad.addColorStop(1, '#001a33');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+
+        bubbles.forEach(b => {
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.2, 0, Math.PI*2);
+            ctx.fill();
+        });
+    }
+
+    // 障害物
+    obstacles.forEach(obs => {
+        ctx.save();
+        const currentY = obs.yOffset !== undefined ? obs.baseY + obs.yOffset : obs.y;
+        const cx = obs.x + obs.w / 2;
+        const cy = currentY + obs.h / 2;
+
+        if (obs.type === 0) {
+            ctx.fillStyle = 'rgba(255, 153, 204, 0.8)';
+            ctx.beginPath();
+            ctx.arc(cx, currentY + obs.w/2, obs.w/2, Math.PI, 0);
+            ctx.fill();
+            
+            ctx.strokeStyle = 'rgba(255, 153, 204, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            for (let i = 0; i < 4; i++) {
+                let tx = obs.x + (obs.w / 4) * i + (obs.w / 8);
+                ctx.beginPath();
+                ctx.moveTo(tx, currentY + obs.w/2);
+                ctx.lineTo(tx + Math.sin(timeAlive*5 + i)*5, currentY + obs.h);
+                ctx.stroke();
+            }
+        } 
+        else if (obs.type === 1) {
+            ctx.fillStyle = '#404040';
+            ctx.beginPath();
+            ctx.moveTo(obs.x + obs.w*0.2, currentY);
+            ctx.lineTo(obs.x + obs.w*0.8, currentY + obs.h*0.1);
+            ctx.lineTo(obs.x + obs.w, currentY + obs.h*0.6);
+            ctx.lineTo(obs.x + obs.w*0.7, currentY + obs.h);
+            ctx.lineTo(obs.x + obs.w*0.1, currentY + obs.h*0.9);
+            ctx.lineTo(obs.x, currentY + obs.h*0.4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = '#5a5a5a';
+            ctx.beginPath();
+            ctx.moveTo(obs.x + obs.w*0.2, currentY);
+            ctx.lineTo(obs.x + obs.w*0.5, currentY + obs.h*0.3);
+            ctx.lineTo(obs.x + obs.w*0.3, currentY + obs.h*0.6);
+            ctx.lineTo(obs.x, currentY + obs.h*0.4);
+            ctx.fill();
+        } 
+        else {
+            ctx.strokeStyle = '#cccccc';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for(let i=0; i<=obs.w; i+=10){
+                ctx.moveTo(obs.x + i, currentY);
+                ctx.lineTo(obs.x + i, currentY + obs.h);
+            }
+            for(let j=0; j<=obs.h; j+=10){
+                ctx.moveTo(obs.x, currentY + j);
+                ctx.lineTo(obs.x + obs.w, currentY + j);
+            }
+            ctx.stroke();
+            ctx.strokeStyle = '#999999';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(obs.x, currentY, obs.w, obs.h);
+        }
+        ctx.restore();
+    });
+
+    // 弾描画（水色の泡風）
+    bullets.forEach(b => {
+        ctx.fillStyle = '#80e5ff';
+        ctx.beginPath();
+        ctx.ellipse(b.x + b.w/2, b.y + b.h/2, b.w/2, b.h/2, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    });
+
+    // プレイヤー
+    if (customImages.player) {
+        ctx.drawImage(customImages.player, player.x, player.y, player.w, player.h);
+    } else {
+        const cx = player.x + player.w / 2;
+        const cy = player.y + player.h / 2;
+        const bodyW = player.w * 0.7;
+        
+        ctx.fillStyle = '#ffcc00';
+        ctx.beginPath();
+        ctx.moveTo(player.x + 15, cy);
+        ctx.lineTo(player.x - 5, cy - 18);
+        ctx.lineTo(player.x - 5, cy + 18);
+        ctx.fill();
+
+        ctx.fillStyle = '#ff9900';
+        ctx.beginPath(); 
+        ctx.ellipse(cx, player.y + 5, bodyW/2.5, 8, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath(); 
+        ctx.ellipse(cx - 5, cy + 10, 8, 5, -Math.PI/6, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffaa00';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, bodyW/2, player.h/2, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(cx - 5, cy - player.h/2.2);
+        ctx.lineTo(cx - 5, cy + player.h/2.2);
+        ctx.moveTo(cx + 10, cy - player.h/2.2);
+        ctx.lineTo(cx + 10, cy + player.h/2.2);
+        ctx.stroke();
+
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(player.x + player.w - 15, cy - 5, 6, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(player.x + player.w - 13, cy - 5, 2.5, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    // UIスコア・キル数表示
+    if (gameState === 'PLAYING') {
+        ctx.fillStyle = '#00ffff';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.strokeStyle = '#003366';
+        ctx.lineWidth = 4;
+        
+        const uiText = `TIME: ${timeAlive.toFixed(1)} s    KILLS: ${kills}`;
+        ctx.strokeText(uiText, 20, 40);
+        ctx.fillText(uiText, 20, 40);
+    }
+
+    ctx.restore();
+}
+
+/**
+ * カスタム画像（LocalStorage）関連処理
+ */
+const KEY_PREFIX = 'aquaRunner_';
+
+function handleImageSelect(event, type) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        try {
+            localStorage.setItem(KEY_PREFIX + type, dataUrl);
+            loadImageToGame(dataUrl, type);
+        } catch (err) {
+            alert('画像サイズが大きすぎます！小さな画像を選んでね。');
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+function loadImageToGame(dataUrl, type) {
+    const img = new Image();
+    img.onload = () => { customImages[type] = img; };
+    img.src = dataUrl;
+}
+
+function loadCustomImages() {
+    const pImg = localStorage.getItem(KEY_PREFIX + 'player');
+    const bImg = localStorage.getItem(KEY_PREFIX + 'bg');
+    if (pImg) loadImageToGame(pImg, 'player');
+    if (bImg) loadImageToGame(bImg, 'bg');
+}
+
+function resetCustomImages() {
+    try {
+        localStorage.removeItem(KEY_PREFIX + 'player');
+        localStorage.removeItem(KEY_PREFIX + 'bg');
+    } catch(e){}
+    customImages.player = null;
+    customImages.bg = null;
+    inFilePlayer.value = '';
+    inFileBg.value = '';
+    alert('画像をデフォルトに戻しました！');
+}
+
+/**
+ * フルスクリーンAPI
+ */
+function toggleFullScreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log(`Error: ${err.message}`);
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+}
+
+// 実行開始
+window.onload = init;
+
+</script>
+</body>
+</html>
