@@ -1,1 +1,586 @@
- 
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ねこねこらんにゃー</title>
+<style>
+    /* CSS - リセットと基本設定 */
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html, body { width: 100%; height: 100%; background-color: #0f2411; overflow: hidden; touch-action: none; font-family: 'Courier New', Courier, monospace; }
+    
+    /* キャンバス領域 */
+    #game-canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; image-rendering: pixelated; }
+    
+    /* UIオーバーレイ共通 */
+    .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #fff; }
+    .hidden { display: none !important; }
+    
+    /* タイトル画面 */
+    #title-screen { background: rgba(15, 36, 17, 0.85); }
+    h1 { font-size: 7vh; margin-bottom: 20px; color: #a4e44c; text-shadow: 4px 4px 0px #2a5a22; font-weight: bold; letter-spacing: 2px;}
+    
+    /* ボタンデザイン */
+    .btn { background: #a4e44c; color: #0f2411; border: 4px solid #2a5a22; box-shadow: 4px 4px 0 #153810; padding: 15px 40px; font-size: 4vh; font-weight: bold; cursor: pointer; transition: transform 0.1s; margin: 10px; font-family: inherit; }
+    .btn:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0 #153810; }
+    .btn-small { background: #d09c48; color: #fff; border: 3px solid #8b5a2b; box-shadow: 2px 2px 0 #4a2e12; padding: 10px 20px; font-size: 2.5vh; margin: 5px; cursor: pointer; font-family: inherit; font-weight: bold; }
+    .btn-small:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0 #4a2e12; }
+    
+    /* カスタマイズパネル */
+    .custom-panel { background: rgba(255,255,255,0.1); border: 4px solid #2a5a22; padding: 15px; margin-top: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; justify-content: center;}
+    .custom-item { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 2vh; font-weight: bold; color: #d8f8b8;}
+    input[type="file"] { display: none; }
+    .file-label { background: #68a038; color: #fff; padding: 8px 15px; border: 3px solid #2a5a22; cursor: pointer; font-size: 2vh; box-shadow: 2px 2px 0 #153810; font-weight: bold;}
+    .file-label:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0 #153810; }
+    
+    /* HUD（スコア・ライフ表示など） */
+    #hud { position: absolute; top: 20px; left: 20px; z-index: 5; color: #a4e44c; font-size: 4vh; font-weight: bold; text-shadow: 3px 3px 0px #153810; pointer-events: none; line-height: 1.2;}
+    
+    /* ゲームオーバー画面 */
+    #gameover-screen { background: rgba(50, 10, 10, 0.85); }
+    .gameover-text { font-size: 8vh; margin-bottom: 10px; font-weight: bold; color: #ff6b6b; text-shadow: 4px 4px 0px #801010; }
+    .result-score { font-size: 5vh; margin-bottom: 30px; color: #f8f8f8; text-shadow: 3px 3px 0px #153810; }
+    
+    /* フルスクリーンボタン */
+    #fullscreen-btn { position: absolute; top: 20px; right: 20px; z-index: 20; display: none; background: #68a038; border: 3px solid #2a5a22; padding: 5px; width: 50px; height: 50px; color: white; font-size: 20px; cursor: pointer; box-shadow: 2px 2px 0 #153810; font-weight: bold; }
+    #fullscreen-btn:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0 #153810; }
+    
+    /* 縦画面警告 */
+    #portrait-warning { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #0f2411; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; color: #a4e44c; font-size: 5vw; text-align: center; padding: 20px; font-weight: bold; }
+    #portrait-warning span { font-size: 15vw; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<canvas id="game-canvas"></canvas>
+
+<div id="hud" class="hidden">
+    じかん: <span id="score-val">0.0</span> びょう<br>
+    らいふ: <span id="lives-val">3</span>
+</div>
+
+<button id="fullscreen-btn" title="おおきくする">⛶</button>
+
+<div id="title-screen" class="overlay">
+    <h1>ねこねこらんにゃー</h1>
+    <button id="btn-play" class="btn">あそぶ</button>
+    
+    <div class="custom-panel">
+        <div class="custom-item">
+            <span>ねこのがぞう</span>
+            <label class="file-label"><input type="file" id="file-player" accept="image/*">えらぶ</label>
+        </div>
+        <div class="custom-item">
+            <span>もりのはいけい</span>
+            <label class="file-label"><input type="file" id="file-bg" accept="image/*">えらぶ</label>
+        </div>
+        <div class="custom-item">
+            <span>もとにもどす</span>
+            <button id="btn-reset-img" class="btn-small">りせっと</button>
+        </div>
+    </div>
+    <div id="save-msg" style="color:#a4e44c; font-size:2vh; margin-top:5px; height:2vh;"></div>
+</div>
+
+<div id="gameover-screen" class="overlay hidden">
+    <div class="gameover-text">げーむおーばー</div>
+    <div class="result-score">いきのこったじかん: <span id="result-val">0.0</span> びょう</div>
+    <button id="btn-retry" class="btn">もういちど</button>
+</div>
+
+<div id="portrait-warning" class="hidden">
+    <span>📱↺</span>
+    <p>よこがめんにしてね</p>
+</div>
+
+<script>
+/**
+ * ========================================================
+ * 1. CONFIG & STATE
+ * ========================================================
+ */
+const CONFIG = {
+    worldW: 960,       
+    worldH: 540,       
+    playerW: 64,       
+    playerH: 48,       
+    playerX: 120,      
+    baseSpeed: 350,    
+    spawnRate: 1.2,    
+    colorPlayer: '#f09020',
+    maxLives: 3
+};
+
+const state = {
+    mode: 'TITLE',
+    score: 0,
+    lives: CONFIG.maxLives,
+    invincibleTime: 0,
+    timeSinceLastSpawn: 0,
+    isPaused: false,
+    speedMultiplier: 1.0,
+    bgOffset: 0
+};
+
+const view = { scale: 1, offsetX: 0, offsetY: 0 };
+let lastTime = 0;
+let reqId = null;
+
+const player = { x: CONFIG.playerX, y: CONFIG.worldH / 2 - CONFIG.playerH / 2, w: CONFIG.playerW, h: CONFIG.playerH };
+let obstacles = [];
+const images = { player: null, bg: null };
+
+/**
+ * ========================================================
+ * 2. DOM Elements
+ * ========================================================
+ */
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+const ui = {
+    title: document.getElementById('title-screen'),
+    gameover: document.getElementById('gameover-screen'),
+    hud: document.getElementById('hud'),
+    scoreVal: document.getElementById('score-val'),
+    livesVal: document.getElementById('lives-val'),
+    resultVal: document.getElementById('result-val'),
+    btnPlay: document.getElementById('btn-play'),
+    btnRetry: document.getElementById('btn-retry'),
+    btnResetImg: document.getElementById('btn-reset-img'),
+    filePlayer: document.getElementById('file-player'),
+    fileBg: document.getElementById('file-bg'),
+    saveMsg: document.getElementById('save-msg'),
+    fsBtn: document.getElementById('fullscreen-btn'),
+    warning: document.getElementById('portrait-warning')
+};
+
+/**
+ * ========================================================
+ * 3. CORE FUNCTIONS
+ * ========================================================
+ */
+function computeView() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    ctx.imageSmoothingEnabled = false; 
+    
+    view.scale = Math.min(canvas.width / CONFIG.worldW, canvas.height / CONFIG.worldH);
+    view.offsetX = (canvas.width - CONFIG.worldW * view.scale) / 2;
+    view.offsetY = (canvas.height - CONFIG.worldH * view.scale) / 2;
+    
+    checkOrientation();
+}
+
+function checkOrientation() {
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isPortrait) {
+        ui.warning.classList.remove('hidden');
+        if (state.mode === 'PLAYING') state.isPaused = true;
+    } else {
+        ui.warning.classList.add('hidden');
+        if (state.mode === 'PLAYING' && state.isPaused) {
+            state.isPaused = false;
+            lastTime = performance.now();
+        }
+    }
+}
+
+function screenToWorldY(clientY) {
+    return (clientY - view.offsetY) / view.scale;
+}
+
+function handlePointer(e) {
+    if (state.mode !== 'PLAYING' || state.isPaused) return;
+    const wy = screenToWorldY(e.clientY);
+    player.y = Math.max(0, Math.min(CONFIG.worldH - player.h, wy - player.h / 2));
+}
+
+window.addEventListener('resize', computeView);
+window.addEventListener('pointerdown', handlePointer);
+window.addEventListener('pointermove', handlePointer);
+document.addEventListener('touchmove', (e) => {
+    if(e.target === canvas) e.preventDefault();
+}, { passive: false });
+
+/**
+ * ========================================================
+ * 4. GAME LOGIC
+ * ========================================================
+ */
+function startGame() {
+    state.mode = 'PLAYING';
+    state.score = 0;
+    state.lives = CONFIG.maxLives;
+    state.invincibleTime = 0;
+    state.timeSinceLastSpawn = 0;
+    state.speedMultiplier = 1.0;
+    state.bgOffset = 0;
+    state.isPaused = false;
+    
+    ui.livesVal.innerText = state.lives;
+    player.y = CONFIG.worldH / 2 - CONFIG.playerH / 2;
+    obstacles = [];
+    
+    ui.title.classList.add('hidden');
+    ui.gameover.classList.add('hidden');
+    ui.hud.classList.remove('hidden');
+    
+    lastTime = performance.now();
+    if (!reqId) reqId = requestAnimationFrame(gameLoop);
+}
+
+function gameOver() {
+    state.mode = 'GAMEOVER';
+    ui.hud.classList.add('hidden');
+    ui.resultVal.innerText = state.score.toFixed(1);
+    ui.gameover.classList.remove('hidden');
+}
+
+function spawnObstacle() {
+    // 0: 木, 1: トゲ草, 2: ハチ
+    const type = Math.floor(Math.random() * 3);
+    let w, h;
+    
+    if (type === 0) {
+        w = 60 + Math.random() * 20;
+        h = 100 + Math.random() * 80;
+    } else if (type === 1) {
+        w = 50 + Math.random() * 20;
+        h = 50 + Math.random() * 20;
+    } else {
+        w = 50; h = 40;
+    }
+    
+    const y = Math.random() * (CONFIG.worldH - h);
+    obstacles.push({ x: CONFIG.worldW, y: y, w: w, h: h, type: type });
+}
+
+function checkCollision(r1, r2) {
+    const margin = 8;
+    return r1.x + margin < r2.x + r2.w - margin &&
+           r1.x + r1.w - margin > r2.x + margin &&
+           r1.y + margin < r2.y + r2.h - margin &&
+           r1.y + r1.h - margin > r2.y + margin;
+}
+
+function update(dt) {
+    if (state.mode !== 'PLAYING' || state.isPaused) return;
+
+    // スコア(時間)の更新
+    state.score += dt;
+    ui.scoreVal.innerText = state.score.toFixed(1);
+    state.speedMultiplier = 1 + (state.score / 35); 
+    
+    // 無敵時間の減少
+    if (state.invincibleTime > 0) {
+        state.invincibleTime -= dt;
+    }
+
+    const currentSpeed = CONFIG.baseSpeed * state.speedMultiplier;
+    state.bgOffset = (state.bgOffset + currentSpeed * dt * 0.4) % CONFIG.worldW;
+
+    state.timeSinceLastSpawn += dt;
+    const currentSpawnRate = Math.max(0.4, CONFIG.spawnRate / state.speedMultiplier);
+    if (state.timeSinceLastSpawn >= currentSpawnRate) {
+        spawnObstacle();
+        state.timeSinceLastSpawn = 0;
+    }
+
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        
+        if(obs.type === 2) {
+            obs.y += Math.sin(state.score * 10 + obs.x) * 2;
+        }
+
+        obs.x -= currentSpeed * dt;
+
+        if (obs.x + obs.w < 0) {
+            obstacles.splice(i, 1);
+            continue;
+        }
+
+        // 当たり判定 (無敵時間中はすり抜ける)
+        if (state.invincibleTime <= 0 && checkCollision(player, obs)) {
+            state.lives -= 1;
+            ui.livesVal.innerText = state.lives;
+            
+            if (state.lives <= 0) {
+                gameOver();
+                return;
+            } else {
+                state.invincibleTime = 1.0; // 1秒間無敵にする
+            }
+        }
+    }
+}
+
+/**
+ * ========================================================
+ * 5. RENDERING (Pixel Art / Shapes)
+ * ========================================================
+ */
+function drawForestBackground(offset) {
+    ctx.fillStyle = '#113316';
+    ctx.fillRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+    
+    ctx.fillStyle = '#0b220d';
+    for(let i=0; i<12; i++) {
+        let px = ((i * 120) - offset * 0.5) % CONFIG.worldW;
+        if(px < 0) px += CONFIG.worldW;
+        ctx.fillRect(px, 0, 40, CONFIG.worldH);
+        ctx.fillRect(px - 10, 50 + (i%3)*40, 60, 30);
+    }
+
+    ctx.fillStyle = '#1e5224';
+    for(let i=0; i<8; i++) {
+        let px = ((i * 200) - offset) % CONFIG.worldW;
+        if(px < 0) px += CONFIG.worldW;
+        ctx.fillRect(px, 0, 60, CONFIG.worldH);
+        ctx.fillStyle = '#26682b';
+        ctx.fillRect(px - 20, 100 + (i%2)*80, 100, 50);
+        ctx.fillRect(px - 10, 300 - (i%2)*50, 80, 40);
+        ctx.fillStyle = '#1e5224';
+    }
+
+    ctx.fillStyle = 'rgba(230, 255, 150, 0.08)';
+    ctx.beginPath();
+    for(let i=0; i<4; i++) {
+        let px = ((i * 350) - offset * 0.8) % CONFIG.worldW;
+        if(px < 0) px += CONFIG.worldW;
+        ctx.moveTo(px + 100, 0);
+        ctx.lineTo(px + 250, 0);
+        ctx.lineTo(px - 50, CONFIG.worldH);
+        ctx.lineTo(px - 200, CONFIG.worldH);
+    }
+    ctx.fill();
+}
+
+function drawCat(x, y, w, h) {
+    const u = w / 16; 
+    const v = h / 12;
+
+    ctx.fillStyle = CONFIG.colorPlayer;
+    ctx.fillRect(x + u*3, y + v*4, u*10, v*6);
+    ctx.fillRect(x + u*9, y + v*2, u*6, v*6);
+    ctx.fillStyle = '#d06010'; 
+    ctx.fillRect(x + u*9, y, u*2, v*2);
+    ctx.fillRect(x + u*13, y, u*2, v*2);
+    ctx.fillRect(x, y + v*4, u*3, v*2);
+    ctx.fillRect(x - u, y + v*3, u*2, v*2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + u*11, y + v*4, u*4, v*3);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x + u*12, y + v*5, u, v);
+    ctx.fillRect(x + u*14, y + v*5, u, v);
+    ctx.fillStyle = '#ff99aa'; 
+    ctx.fillRect(x + u*13, y + v*6, u, v);
+    ctx.fillStyle = '#d06010';
+    const runOffset = (Math.floor(state.score * 10) % 2) * u;
+    ctx.fillRect(x + u*4 - runOffset, y + v*10, u*2, v*2);
+    ctx.fillRect(x + u*8 + runOffset, y + v*10, u*2, v*2);
+}
+
+function drawTree(x, y, w, h) {
+    ctx.fillStyle = '#5c4033';
+    ctx.fillRect(x + w*0.2, y, w*0.6, h);
+    ctx.fillStyle = '#3e2723';
+    ctx.fillRect(x + w*0.3, y + h*0.2, w*0.2, h*0.3);
+    ctx.fillRect(x + w*0.5, y + h*0.6, w*0.2, h*0.2);
+    ctx.fillStyle = '#33691e';
+    ctx.fillRect(x, y + h*0.1, w, h*0.2);
+    ctx.fillRect(x + w*0.1, y + h*0.7, w*0.8, h*0.2);
+}
+
+function drawThorn(x, y, w, h) {
+    ctx.fillStyle = '#4caf50'; 
+    ctx.fillRect(x + w*0.2, y + h*0.3, w*0.6, h*0.7);
+    ctx.fillStyle = '#1b5e20'; 
+    ctx.fillRect(x, y + h*0.5, w*0.3, h*0.5);
+    ctx.fillRect(x + w*0.7, y + h*0.4, w*0.3, h*0.6);
+    ctx.fillStyle = '#b71c1c';
+    ctx.fillRect(x + w*0.1, y + h*0.2, w*0.15, h*0.3);
+    ctx.fillRect(x + w*0.4, y, w*0.2, h*0.3);
+    ctx.fillRect(x + w*0.75, y + h*0.1, w*0.15, h*0.3);
+}
+
+function drawBee(x, y, w, h) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    const flap = (Math.floor(state.score * 20) % 2 === 0) ? h*0.1 : 0;
+    ctx.fillRect(x + w*0.3, y - flap, w*0.3, h*0.4);
+    ctx.fillRect(x + w*0.6, y - flap, w*0.2, h*0.3);
+    ctx.fillStyle = '#fbc02d';
+    ctx.fillRect(x + w*0.2, y + h*0.3, w*0.7, h*0.5);
+    ctx.fillStyle = '#212121';
+    ctx.fillRect(x + w*0.4, y + h*0.3, w*0.15, h*0.5);
+    ctx.fillRect(x + w*0.7, y + h*0.3, w*0.15, h*0.5);
+    ctx.fillStyle = '#212121';
+    ctx.fillRect(x, y + h*0.5, w*0.2, h*0.15);
+    ctx.fillRect(x + w*0.8, y + h*0.4, w*0.1, h*0.15);
+}
+
+function draw() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.translate(view.offsetX, view.offsetY);
+    ctx.scale(view.scale, view.scale);
+
+    ctx.beginPath();
+    ctx.rect(0, 0, CONFIG.worldW, CONFIG.worldH);
+    ctx.clip();
+
+    // 背景
+    if (images.bg) {
+        ctx.drawImage(images.bg, -state.bgOffset, 0, CONFIG.worldW, CONFIG.worldH);
+        ctx.drawImage(images.bg, CONFIG.worldW - state.bgOffset, 0, CONFIG.worldW, CONFIG.worldH);
+    } else {
+        drawForestBackground(state.bgOffset);
+    }
+
+    // 障害物
+    obstacles.forEach(obs => {
+        if (obs.type === 0) drawTree(obs.x, obs.y, obs.w, obs.h);
+        else if (obs.type === 1) drawThorn(obs.x, obs.y, obs.w, obs.h);
+        else drawBee(obs.x, obs.y, obs.w, obs.h);
+    });
+
+    // プレイヤー描画 (無敵時間中の点滅処理)
+    let shouldDrawPlayer = true;
+    if (state.invincibleTime > 0) {
+        // 0.1秒間隔で点滅させる
+        shouldDrawPlayer = Math.floor(state.invincibleTime * 10) % 2 === 0;
+    }
+
+    if (shouldDrawPlayer) {
+        if (images.player) {
+            ctx.drawImage(images.player, player.x, player.y, player.w, player.h);
+        } else {
+            drawCat(player.x, player.y, player.w, player.h);
+        }
+    }
+
+    ctx.strokeStyle = '#a4e44c';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(0, 0, CONFIG.worldW, CONFIG.worldH);
+
+    ctx.restore();
+}
+
+function gameLoop(now) {
+    reqId = requestAnimationFrame(gameLoop);
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+    
+    if (dt > 0.5) return;
+
+    update(dt);
+    draw();
+}
+
+/**
+ * ========================================================
+ * 6. CUSTOMIZATION (Images)
+ * ========================================================
+ */
+function showSaveMessage(text) {
+    ui.saveMsg.innerText = text;
+    setTimeout(() => { ui.saveMsg.innerText = ''; }, 2000);
+}
+
+function resizeAndProcessImage(file, maxWidth, maxHeight, callback) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            const cvs = document.createElement('canvas');
+            let w = img.width;
+            let h = img.height;
+            const ratio = Math.min(maxWidth / w, maxHeight / h);
+            if (ratio < 1) { w *= ratio; h *= ratio; }
+            
+            cvs.width = w;
+            cvs.height = h;
+            const cCtx = cvs.getContext('2d');
+            cCtx.imageSmoothingEnabled = false; 
+            cCtx.drawImage(img, 0, 0, w, h);
+            
+            const type = maxWidth === CONFIG.worldW ? 'image/jpeg' : 'image/png';
+            const quality = type === 'image/jpeg' ? 0.7 : undefined;
+            callback(cvs.toDataURL(type, quality));
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function loadCustomImage(key, dataUrl) {
+    if(!dataUrl) return;
+    const img = new Image();
+    img.onload = () => { images[key] = img; };
+    img.src = dataUrl;
+}
+
+function handleFileUpload(inputElement, key, maxWidth, maxHeight) {
+    inputElement.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        resizeAndProcessImage(file, maxWidth, maxHeight, (dataUrl) => {
+            try {
+                localStorage.setItem(`nekoRunner_${key}`, dataUrl);
+                loadCustomImage(key, dataUrl);
+                showSaveMessage(`${key === 'player' ? 'ねこ' : 'はいけい'}がぞうをかえました`);
+            } catch (err) {
+                alert('がぞうがおおきすぎます。');
+            }
+        });
+        e.target.value = '';
+    });
+}
+
+handleFileUpload(ui.filePlayer, 'player', 150, 150); 
+handleFileUpload(ui.fileBg, 'bg', CONFIG.worldW, CONFIG.worldH); 
+
+ui.btnResetImg.addEventListener('click', () => {
+    localStorage.removeItem('nekoRunner_player');
+    localStorage.removeItem('nekoRunner_bg');
+    images.player = null;
+    images.bg = null;
+    showSaveMessage('もとにもどしました');
+});
+
+/**
+ * ========================================================
+ * 7. INITIALIZATION & EVENTS
+ * ========================================================
+ */
+ui.btnPlay.addEventListener('click', startGame);
+ui.btnRetry.addEventListener('click', startGame);
+
+if (document.documentElement.requestFullscreen) {
+    ui.fsBtn.style.display = 'block';
+    ui.fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => console.warn(err));
+        } else {
+            document.exitFullscreen();
+        }
+    });
+}
+
+function init() {
+    computeView();
+    loadCustomImage('player', localStorage.getItem('nekoRunner_player'));
+    loadCustomImage('bg', localStorage.getItem('nekoRunner_bg'));
+    draw(); 
+}
+
+window.onload = init;
+
+</script>
+</body>
+</html>
